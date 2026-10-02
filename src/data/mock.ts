@@ -5,17 +5,17 @@ import type {
 
 export const tenants: Tenant[] = [
   {
-    id: 't1', name_taller: 'Taller Electrónica Ramírez', name_dueño: 'Carlos Ramírez',
+    id: 't1', name_taller: 'Taller Electrónica Ramírez', name_dueno: 'Carlos Ramírez',
     email: 'carlos@talleramirez.com', phone: '5512345678', status: 'active',
     created_at: '2026-08-15', plan: 'pro', user_count: 4, order_count: 27,
   },
   {
-    id: 't2', name_taller: 'FixCell Reparaciones', name_dueño: 'María González',
+    id: 't2', name_taller: 'FixCell Reparaciones', name_dueno: 'María González',
     email: 'maria@fixcell.com', phone: '5598765432', status: 'active',
     created_at: '2026-09-01', plan: 'starter', user_count: 2, order_count: 12,
   },
   {
-    id: 't3', name_taller: 'TechRepair Pro', name_dueño: 'Juan Mendoza',
+    id: 't3', name_taller: 'TechRepair Pro', name_dueno: 'Juan Mendoza',
     email: 'juan@techrepair.com', phone: '5523456789', status: 'suspended',
     created_at: '2026-07-20', plan: 'enterprise', user_count: 8, order_count: 95,
   },

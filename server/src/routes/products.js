@@ -1,32 +1,40 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { Product, Category, Supplier, InventoryMovement } from '../models.js';
+import { Product, Category, InventoryMovement } from '../models.js';
 import { authMiddleware, authorize, requireTenantId } from '../middleware/auth.js';
 
 const router = Router();
 
 router.use(authMiddleware);
 
-// GET /api/products — listar productos del tenant
-router.get('/', authorize(['owner', 'technician', 'secretary', 'cashier']), async (req, res) => {
+// 1. ESTA SIEMPRE VA PRIMERO - ANTES DE /:id
+router.get('/categories/all', authorize(['owner', 'technician', 'secretary', 'secretaria', 'cashier', 'cajera', 'receptionist', 'admin']), async (req, res) => {
+  const tenantId = requireTenantId(req, res);
+  if (!tenantId) return;
+  const categories = await Category.findAll({ where: { tenant_id: tenantId }, order: [['name', 'ASC']] });
+  res.json({ categories });
+});
+
+// 2. Productos - ahora secretaria SI puede ver
+router.get('/', authorize(['owner', 'technician', 'secretary', 'secretaria', 'cashier', 'cajera', 'receptionist', 'admin']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const { search, category_id } = req.query;
   const where = { tenant_id: tenantId };
-  if (category_id && category_id !== 'all') where.category_id = category_id;
+  if (category_id && category_id!== 'all') where.category_id = category_id;
   if (search) {
-    where[Symbol.for('or')] = [
-      { name: { [Symbol.for('like')]: `%${search}%` } },
-      { sku: { [Symbol.for('like')]: `%${search}%` } },
-      { barcode: { [Symbol.for('like')]: `%${search}%` } },
+    const { Op } = await import('sequelize');
+    where[Op.or] = [
+      { name: { [Op.like]: `%${search}%` } },
+      { sku: { [Op.like]: `%${search}%` } },
+      { barcode: { [Op.like]: `%${search}%` } },
     ];
   }
   const products = await Product.findAll({ where, order: [['name', 'ASC']] });
   res.json({ products });
 });
 
-// GET /api/products/low-stock — alertas de stock bajo
-router.get('/low-stock', authorize(['owner', 'technician']), async (req, res) => {
+router.get('/low-stock', authorize(['owner', 'technician', 'secretary', 'secretaria', 'cashier', 'admin']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const products = await Product.findAll({ where: { tenant_id: tenantId } });
@@ -34,33 +42,43 @@ router.get('/low-stock', authorize(['owner', 'technician']), async (req, res) =>
   res.json({ products: lowStock });
 });
 
-// GET /api/products/:id
-router.get('/:id', authorize(['owner', 'technician']), async (req, res) => {
+// 3. Movimientos - antes de /:id también
+router.get('/:id/movements', authorize(['owner', 'technician', 'secretary', 'secretaria', 'cashier', 'admin']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
+  const movements = await InventoryMovement.findAll({
+    where: { product_id: req.params.id, tenant_id: tenantId },
+    order: [['created_at', 'DESC']],
+  });
+  res.json({ movements });
+});
+
+// 4. Obtener un producto
+router.get('/:id', authorize(['owner', 'technician', 'secretary', 'secretaria', 'cashier', 'admin']), async (req, res) => {
+  const tenantId = requireTenantId(req, res);
+  if (!tenantId) return;
+  // Evita que /categories/all caiga aquí
+  if (req.params.id === 'categories') return res.status(404).json({ error: 'Ruta no encontrada' });
   const product = await Product.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
   if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
   res.json({ product });
 });
 
-// POST /api/products
+// POST - solo owner/technician pueden crear
 router.post('/', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
-  const {
-    sku, barcode, name, description, category_id,
-    cost_price, sale_price, wholesale_price, stock, min_stock,
-  } = req.body;
-  if (!sku || !name) {
-    return res.status(400).json({ error: 'SKU y nombre son requeridos' });
-  }
+  let { sku, barcode, name, description, category_id, cost_price, sale_price, wholesale_price, stock, min_stock } = req.body;
+  if (!sku ||!name) return res.status(400).json({ error: 'SKU y nombre son requeridos' });
+  if (!category_id || category_id === '') category_id = null;
+
   const product = await Product.create({
     id: uuidv4(), tenant_id: tenantId, sku, barcode, name, description,
     category_id, cost_price: cost_price || 0, sale_price: sale_price || 0,
     wholesale_price: wholesale_price || 0, stock: stock || 0,
     min_stock: min_stock || 5, favorite: false,
   });
-  // Si hay stock inicial, registrar movimiento
+
   if (stock && stock > 0) {
     await InventoryMovement.create({
       id: uuidv4(), tenant_id: tenantId, product_id: product.id,
@@ -71,24 +89,18 @@ router.post('/', authorize(['owner', 'technician']), async (req, res) => {
   res.status(201).json({ product });
 });
 
-// PUT /api/products/:id
 router.put('/:id', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const product = await Product.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
   if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
-  const fields = [
-    'sku', 'barcode', 'name', 'description', 'category_id',
-    'cost_price', 'sale_price', 'wholesale_price', 'min_stock', 'favorite', 'hotkey',
-  ];
-  fields.forEach((f) => {
-    if (req.body[f] !== undefined) product[f] = req.body[f];
-  });
+  if (req.body.category_id === '') req.body.category_id = null;
+  const fields = ['sku', 'barcode', 'name', 'description', 'category_id', 'cost_price', 'sale_price', 'wholesale_price', 'min_stock', 'favorite', 'hotkey'];
+  fields.forEach((f) => { if (req.body[f]!== undefined) product[f] = req.body[f]; });
   await product.save();
   res.json({ product });
 });
 
-// PUT /api/products/:id/stock — ajustar stock (crea movimiento)
 router.put('/:id/stock', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
@@ -106,7 +118,6 @@ router.put('/:id/stock', authorize(['owner', 'technician']), async (req, res) =>
   res.json({ product });
 });
 
-// DELETE /api/products/:id — solo owner
 router.delete('/:id', authorize(['owner']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
@@ -116,26 +127,8 @@ router.delete('/:id', authorize(['owner']), async (req, res) => {
   res.json({ message: 'Producto eliminado' });
 });
 
-// GET /api/products/:id/movements — kardex
-router.get('/:id/movements', authorize(['owner', 'technician']), async (req, res) => {
-  const tenantId = requireTenantId(req, res);
-  if (!tenantId) return;
-  const movements = await InventoryMovement.findAll({
-    where: { product_id: req.params.id, tenant_id: tenantId },
-    order: [['created_at', 'DESC']],
-  });
-  res.json({ movements });
-});
-
-// ===== CATEGORIES =====
-router.get('/categories/all', authorize(['owner', 'technician']), async (req, res) => {
-  const tenantId = requireTenantId(req, res);
-  if (!tenantId) return;
-  const categories = await Category.findAll({ where: { tenant_id: tenantId } });
-  res.json({ categories });
-});
-
-router.post('/categories', authorize(['owner']), async (req, res) => {
+// Categories POST
+router.post('/categories', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const { name, color, icon } = req.body;

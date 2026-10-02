@@ -13,7 +13,7 @@ async function seed() {
     await Tenant.create({
       id: t1Id,
       name_taller: 'Taller Electrónica Ramírez',
-      name_dueño: 'Carlos Ramírez',
+      name_dueno: 'Carlos Ramírez',
       email: 'carlos@talleramirez.com',
       phone: '5512345678',
       status: 'active',
@@ -160,7 +160,7 @@ async function seed() {
     // ===== TENANT 2 (suspended) =====
     const t2Id = uuidv4();
     await Tenant.create({
-      id: t2Id, name_taller: 'TechRepair Pro', name_dueño: 'Juan Mendoza',
+      id: t2Id, name_taller: 'TechRepair Pro', name_dueno: 'Juan Mendoza',
       email: 'juan@techrepair.com', phone: '5523456789',
       status: 'suspended', plan: 'enterprise',
     });

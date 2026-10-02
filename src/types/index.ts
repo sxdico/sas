@@ -13,7 +13,7 @@ export interface User {
 export interface Tenant {
   id: string;
   name_taller: string;
-  name_dueño: string;
+  name_dueno: string;
   email: string;
   phone: string;
   status: 'active' | 'suspended';

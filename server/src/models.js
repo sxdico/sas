@@ -16,7 +16,7 @@ const sequelize = new Sequelize(
 export const Tenant = sequelize.define('Tenant', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   name_taller: { type: DataTypes.STRING(200), allowNull: false },
-  name_dueño: { type: DataTypes.STRING(150), allowNull: false },
+  name_dueno: { type: DataTypes.STRING(150), allowNull: false },
   email: { type: DataTypes.STRING(200), allowNull: false, unique: true },
   phone: { type: DataTypes.STRING(20), allowNull: false },
   status: { type: DataTypes.ENUM('active', 'suspended'), defaultValue: 'active' },

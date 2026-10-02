@@ -2,7 +2,7 @@ import type { Role } from '@/types';
 
 export const ROLE_LABELS: Record<Role, string> = {
   super_admin: 'Super Admin',
-  owner: 'Dueño',
+  owner: 'dueno',
   technician: 'Técnico',
   secretary: 'Secretaria',
   cashier: 'Cajera',

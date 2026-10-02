@@ -41,7 +41,7 @@ export const authAPI = {
 // ===== Tenants API =====
 export const tenantAPI = {
   list: () => api.get('/tenants'),
-  create: (data: { name_taller: string; name_dueño: string; email: string; phone: string; plan?: string }) =>
+  create: (data: { name_taller: string; name_dueno: string; email: string; phone: string; plan?: string }) =>
     api.post('/tenants', data),
   suspend: (id: string) => api.put(`/tenants/${id}/suspend`),
   reactivate: (id: string) => api.put(`/tenants/${id}/reactivate`),

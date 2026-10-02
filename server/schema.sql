@@ -1,18 +1,14 @@
 -- ============================================================
--- FixPro — Schema MySQL 8 (Multi-Tenant SaaS)
--- Ejecutar: mysql -u root -p < schema.sql
+-- FixPro — Schema MySQL 8 (Multi-Tenant SaaS) - FIXED FOR CLEVER CLOUD
 -- ============================================================
-
-CREATE DATABASE IF NOT EXISTS fixpro CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE fixpro;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- ===== TENANTS (Talleres) =====
-CREATE TABLE tenants (
+CREATE TABLE IF NOT EXISTS tenants (
   id            VARCHAR(36) PRIMARY KEY,
   name_taller   VARCHAR(200) NOT NULL,
-  name_dueño    VARCHAR(150) NOT NULL,
+  name_dueno    VARCHAR(150) NOT NULL,
   email         VARCHAR(200) NOT NULL UNIQUE,
   phone         VARCHAR(20)  NOT NULL,
   status        ENUM('active','suspended') DEFAULT 'active',
@@ -22,7 +18,7 @@ CREATE TABLE tenants (
 ) ENGINE=InnoDB;
 
 -- ===== USERS =====
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   id            VARCHAR(36) PRIMARY KEY,
   tenant_id     VARCHAR(36) NULL,
   name          VARCHAR(150) NOT NULL,
@@ -38,7 +34,7 @@ CREATE TABLE users (
 ) ENGINE=InnoDB;
 
 -- ===== CATEGORIES =====
-CREATE TABLE categories (
+CREATE TABLE IF NOT EXISTS categories (
   id            VARCHAR(36) PRIMARY KEY,
   tenant_id     VARCHAR(36) NOT NULL,
   name          VARCHAR(100) NOT NULL,
@@ -50,7 +46,7 @@ CREATE TABLE categories (
 ) ENGINE=InnoDB;
 
 -- ===== SUPPLIERS =====
-CREATE TABLE suppliers (
+CREATE TABLE IF NOT EXISTS suppliers (
   id            VARCHAR(36) PRIMARY KEY,
   tenant_id     VARCHAR(36) NOT NULL,
   name          VARCHAR(150) NOT NULL,
@@ -62,7 +58,7 @@ CREATE TABLE suppliers (
 ) ENGINE=InnoDB;
 
 -- ===== PRODUCTS =====
-CREATE TABLE products (
+CREATE TABLE IF NOT EXISTS products (
   id              VARCHAR(36) PRIMARY KEY,
   tenant_id       VARCHAR(36) NOT NULL,
   sku             VARCHAR(50) NOT NULL,
@@ -89,7 +85,7 @@ CREATE TABLE products (
 ) ENGINE=InnoDB;
 
 -- ===== CUSTOMERS =====
-CREATE TABLE customers (
+CREATE TABLE IF NOT EXISTS customers (
   id              VARCHAR(36) PRIMARY KEY,
   tenant_id       VARCHAR(36) NOT NULL,
   name            VARCHAR(150) NOT NULL,
@@ -103,7 +99,7 @@ CREATE TABLE customers (
 ) ENGINE=InnoDB;
 
 -- ===== INVENTORY MOVEMENTS =====
-CREATE TABLE inventory_movements (
+CREATE TABLE IF NOT EXISTS inventory_movements (
   id            VARCHAR(36) PRIMARY KEY,
   tenant_id     VARCHAR(36) NOT NULL,
   product_id    VARCHAR(36) NOT NULL,
@@ -120,7 +116,7 @@ CREATE TABLE inventory_movements (
 ) ENGINE=InnoDB;
 
 -- ===== REPAIR ORDERS =====
-CREATE TABLE repair_orders (
+CREATE TABLE IF NOT EXISTS repair_orders (
   id                 VARCHAR(36) PRIMARY KEY,
   tenant_id          VARCHAR(36) NOT NULL,
   folio              VARCHAR(20) NOT NULL,
@@ -150,7 +146,7 @@ CREATE TABLE repair_orders (
 ) ENGINE=InnoDB;
 
 -- ===== ORDER PARTS (Refacciones usadas) =====
-CREATE TABLE order_parts (
+CREATE TABLE IF NOT EXISTS order_parts (
   id            VARCHAR(36) PRIMARY KEY,
   tenant_id     VARCHAR(36) NOT NULL,
   order_id      VARCHAR(36) NOT NULL,
@@ -166,7 +162,7 @@ CREATE TABLE order_parts (
 ) ENGINE=InnoDB;
 
 -- ===== SALES =====
-CREATE TABLE sales (
+CREATE TABLE IF NOT EXISTS sales (
   id              VARCHAR(36) PRIMARY KEY,
   tenant_id       VARCHAR(36) NOT NULL,
   folio           VARCHAR(20) NOT NULL,
@@ -190,7 +186,7 @@ CREATE TABLE sales (
 ) ENGINE=InnoDB;
 
 -- ===== SALE ITEMS =====
-CREATE TABLE sale_items (
+CREATE TABLE IF NOT EXISTS sale_items (
   id            VARCHAR(36) PRIMARY KEY,
   tenant_id     VARCHAR(36) NOT NULL,
   sale_id       VARCHAR(36) NOT NULL,
@@ -206,7 +202,7 @@ CREATE TABLE sale_items (
 ) ENGINE=InnoDB;
 
 -- ===== NOTIFICATIONS =====
-CREATE TABLE notifications (
+CREATE TABLE IF NOT EXISTS notifications (
   id            VARCHAR(36) PRIMARY KEY,
   tenant_id     VARCHAR(36) NOT NULL,
   title         VARCHAR(200) NOT NULL,

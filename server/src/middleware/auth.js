@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { User } from './models.js';
+import { User } from '../models.js';
 
 /**
  * Extrae y verifica el JWT del header Authorization.
