@@ -1,0 +1,7 @@
+fixpro.playit.plus {
+    reverse_proxy 127.0.0.1:3001
+}
+
+web.fixpro.playit.plus {
+    reverse_proxy 127.0.0.1:5173
+}
