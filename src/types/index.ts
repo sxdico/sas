@@ -81,6 +81,12 @@ export interface RepairOrder {
   ready_at: string | null;
   delivered_at: string | null;
   parts_used: PartUsed[];
+  // NUEVOS CAMPOS
+  advance_payment: number;
+  lock_type: 'Sin bloqueo' | 'Patrón' | 'PIN' | 'Contraseña' | 'Cuenta Google' | 'iCloud' | 'MDM' | 'Otro';
+  warranty_value: number;
+  warranty_unit: 'Días' | 'Meses';
+  warranty_ends_at: string | null;
 }
 
 export interface PartUsed {

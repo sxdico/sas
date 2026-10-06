@@ -38,7 +38,8 @@ router.post('/', authorize(['owner', 'technician']), async (req, res) => {
   if (!tenantId) return;
   const {
     customer_name, customer_phone, device_type, device_brand,
-    device_model, problem_description,
+    device_model, problem_description, advance_payment, lock_type,
+    warranty_value, warranty_unit
   } = req.body;
   if (!customer_name || !device_brand) {
     return res.status(400).json({ error: 'Cliente y marca son requeridos' });
@@ -53,6 +54,10 @@ router.post('/', authorize(['owner', 'technician']), async (req, res) => {
     status: 'por_revisar', technician_id: req.user.id,
     technician_name: req.user.name,
     cost_parts: 0, cost_labor: 0, total: 0,
+    advance_payment: advance_payment || 0,
+    lock_type: lock_type || 'Sin bloqueo',
+    warranty_value: warranty_value || 10,
+    warranty_unit: warranty_unit || 'Días',
   });
   res.status(201).json({ order });
 });
@@ -66,7 +71,7 @@ router.put('/:id', authorize(['owner', 'technician']), async (req, res) => {
   const fields = [
     'customer_name', 'customer_phone', 'device_type', 'device_brand',
     'device_model', 'problem_description', 'diagnostic', 'private_notes',
-    'cost_labor',
+    'cost_labor', 'advance_payment', 'lock_type', 'warranty_value', 'warranty_unit'
   ];
   fields.forEach((f) => {
     if (req.body[f] !== undefined) order[f] = req.body[f];
@@ -96,6 +101,17 @@ router.put('/:id/status', authorize(['owner', 'technician']), async (req, res) =
     }
     if (status === 'entregado' && !order.delivered_at) {
       order.delivered_at = new Date();
+      
+      // CALCULAR VENCIMIENTO DE GARANTÍA AUTOMÁTICAMENTE
+      if (order.warranty_value && order.warranty_unit) {
+        const entrega = new Date(order.delivered_at);
+        if (order.warranty_unit === 'Días') {
+          entrega.setDate(entrega.getDate() + parseInt(order.warranty_value));
+        } else if (order.warranty_unit === 'Meses') {
+          entrega.setMonth(entrega.getMonth() + parseInt(order.warranty_value));
+        }
+        order.warranty_ends_at = entrega;
+      }
     }
     await order.save({ transaction: t });
 
@@ -169,4 +185,4 @@ router.delete('/:id', authorize(['owner']), async (req, res) => {
   res.json({ message: 'Orden eliminada' });
 });
 
-export default router;
+export default router

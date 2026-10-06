@@ -1,8 +1,8 @@
-import type { Role } from '@/types';
+import type { Role, OrderStatus } from '@/types';
 
 export const ROLE_LABELS: Record<Role, string> = {
   super_admin: 'Super Admin',
-  owner: 'dueno',
+  owner: 'Dueño',
   technician: 'Técnico',
   secretary: 'Secretaria',
   cashier: 'Cajera',
@@ -33,13 +33,13 @@ export function can(role: Role, permission: keyof typeof PERMISSIONS): boolean {
   return (PERMISSIONS[permission] as readonly string[]).includes(role);
 }
 
-export const ORDER_STATUS_CONFIG = {
+export const ORDER_STATUS_CONFIG: Record<OrderStatus, { label: string; color: string; dot: string }> = {
   por_revisar: { label: 'Por Revisar', color: 'bg-ink-100 text-ink-700', dot: 'bg-ink-400' },
   en_reparacion: { label: 'En Reparación', color: 'bg-primary-100 text-primary-700', dot: 'bg-primary-500' },
   esperando_refaccion: { label: 'Esperando Refacción', color: 'bg-warning-100 text-warning-700', dot: 'bg-warning-500' },
   listo: { label: 'Listo', color: 'bg-success-100 text-success-700', dot: 'bg-success-500' },
   entregado: { label: 'Entregado', color: 'bg-ink-200 text-ink-600', dot: 'bg-ink-400' },
-} as const;
+};
 
 export const PAYMENT_METHOD_LABELS: Record<string, string> = {
   efectivo: 'Efectivo',
