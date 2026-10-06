@@ -5,10 +5,8 @@ import { sequelize } from '../models.js';
 import { authMiddleware, authorize, requireTenantId } from '../middleware/auth.js';
 
 const router = Router();
-
 router.use(authMiddleware);
 
-// GET /api/orders — Kanban (owner y technician)
 router.get('/', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
@@ -20,7 +18,6 @@ router.get('/', authorize(['owner', 'technician']), async (req, res) => {
   res.json({ orders });
 });
 
-// GET /api/orders/:id — detalle
 router.get('/:id', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
@@ -32,19 +29,18 @@ router.get('/:id', authorize(['owner', 'technician']), async (req, res) => {
   res.json({ order });
 });
 
-// POST /api/orders — crear
+// POST - CREAR CON TOTAL MANUAL
 router.post('/', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const {
     customer_name, customer_phone, device_type, device_brand,
     device_model, problem_description, advance_payment, lock_type,
-    warranty_value, warranty_unit
+    warranty_value, warranty_unit, total, cost_labor
   } = req.body;
-  if (!customer_name || !device_brand) {
+  if (!customer_name ||!device_brand) {
     return res.status(400).json({ error: 'Cliente y marca son requeridos' });
   }
-  // Generar folio incremental
   const count = await RepairOrder.count({ where: { tenant_id: tenantId } });
   const folio = `RP-${String(count + 1).padStart(3, '0')}`;
   const order = await RepairOrder.create({
@@ -53,7 +49,9 @@ router.post('/', authorize(['owner', 'technician']), async (req, res) => {
     device_brand, device_model, problem_description,
     status: 'por_revisar', technician_id: req.user.id,
     technician_name: req.user.name,
-    cost_parts: 0, cost_labor: 0, total: 0,
+    cost_parts: 0,
+    cost_labor: cost_labor || total || 0,
+    total: total || 0,
     advance_payment: advance_payment || 0,
     lock_type: lock_type || 'Sin bloqueo',
     warranty_value: warranty_value || 10,
@@ -62,7 +60,7 @@ router.post('/', authorize(['owner', 'technician']), async (req, res) => {
   res.status(201).json({ order });
 });
 
-// PUT /api/orders/:id — editar
+// PUT - EDITAR
 router.put('/:id', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
@@ -71,17 +69,19 @@ router.put('/:id', authorize(['owner', 'technician']), async (req, res) => {
   const fields = [
     'customer_name', 'customer_phone', 'device_type', 'device_brand',
     'device_model', 'problem_description', 'diagnostic', 'private_notes',
-    'cost_labor', 'advance_payment', 'lock_type', 'warranty_value', 'warranty_unit'
+    'cost_labor', 'total', 'advance_payment', 'lock_type', 'warranty_value', 'warranty_unit'
   ];
   fields.forEach((f) => {
-    if (req.body[f] !== undefined) order[f] = req.body[f];
+    if (req.body[f]!== undefined) order[f] = req.body[f];
   });
-  order.total = parseFloat(order.cost_parts) + parseFloat(order.cost_labor);
+  // Si no mandan total manual, recalcular con refacciones + mano de obra
+  if (req.body.total === undefined) {
+    order.total = parseFloat(order.cost_parts) + parseFloat(order.cost_labor);
+  }
   await order.save();
   res.json({ order });
 });
 
-// PUT /api/orders/:id/status — cambiar estado
 router.put('/:id/status', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
@@ -92,30 +92,20 @@ router.put('/:id/status', authorize(['owner', 'technician']), async (req, res) =
   }
   const order = await RepairOrder.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
   if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
-
   const t = await sequelize.transaction();
   try {
     order.status = status;
-    if (status === 'listo' && !order.ready_at) {
-      order.ready_at = new Date();
-    }
-    if (status === 'entregado' && !order.delivered_at) {
+    if (status === 'listo' &&!order.ready_at) order.ready_at = new Date();
+    if (status === 'entregado' &&!order.delivered_at) {
       order.delivered_at = new Date();
-      
-      // CALCULAR VENCIMIENTO DE GARANTÍA AUTOMÁTICAMENTE
       if (order.warranty_value && order.warranty_unit) {
         const entrega = new Date(order.delivered_at);
-        if (order.warranty_unit === 'Días') {
-          entrega.setDate(entrega.getDate() + parseInt(order.warranty_value));
-        } else if (order.warranty_unit === 'Meses') {
-          entrega.setMonth(entrega.getMonth() + parseInt(order.warranty_value));
-        }
+        if (order.warranty_unit === 'Días') entrega.setDate(entrega.getDate() + parseInt(order.warranty_value));
+        else if (order.warranty_unit === 'Meses') entrega.setMonth(entrega.getMonth() + parseInt(order.warranty_value));
         order.warranty_ends_at = entrega;
       }
     }
     await order.save({ transaction: t });
-
-    // Notificación cuando pasa a listo
     if (status === 'listo') {
       await Notification.create({
         id: uuidv4(), tenant_id: tenantId,
@@ -133,12 +123,11 @@ router.put('/:id/status', authorize(['owner', 'technician']), async (req, res) =
   }
 });
 
-// POST /api/orders/:id/parts — agregar refacción (descuenta inventario)
 router.post('/:id/parts', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const { product_id, quantity } = req.body;
-  if (!product_id || !quantity || quantity < 1) {
+  if (!product_id ||!quantity || quantity < 1) {
     return res.status(400).json({ error: 'product_id y quantity son requeridos' });
   }
   const order = await RepairOrder.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
@@ -148,25 +137,22 @@ router.post('/:id/parts', authorize(['owner', 'technician']), async (req, res) =
   if (product.stock < quantity) {
     return res.status(400).json({ error: `Stock insuficiente. Disponible: ${product.stock}` });
   }
-
   const t = await sequelize.transaction();
   try {
-    // Descuenta stock
     product.stock -= quantity;
     await product.save({ transaction: t });
-
-    // Crea order_part
     const part = await OrderPart.create({
       id: uuidv4(), tenant_id: tenantId, order_id: order.id,
       product_id, product_name: product.name,
       quantity, unit_cost: product.cost_price,
     }, { transaction: t });
-
-    // Actualiza costos de la orden
     order.cost_parts = parseFloat(order.cost_parts) + (product.cost_price * quantity);
-    order.total = parseFloat(order.cost_parts) + parseFloat(order.cost_labor);
+    // Si el total era 0, lo actualizamos. Si ya tenía un total manual, le sumamos la refacción
+    order.total = parseFloat(order.total || 0) + (product.cost_price * quantity);
+    if (parseFloat(order.total) === 0) {
+      order.total = parseFloat(order.cost_parts) + parseFloat(order.cost_labor);
+    }
     await order.save({ transaction: t });
-
     await t.commit();
     res.status(201).json({ part, order });
   } catch (err) {
@@ -175,7 +161,6 @@ router.post('/:id/parts', authorize(['owner', 'technician']), async (req, res) =
   }
 });
 
-// DELETE /api/orders/:id — solo owner
 router.delete('/:id', authorize(['owner']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;

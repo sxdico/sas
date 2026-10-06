@@ -4,20 +4,18 @@ import { ORDER_STATUS_CONFIG, formatCurrency, formatDateTime } from '@/utils/per
 import type { RepairOrder, OrderStatus, Product } from '@/types';
 import {
   Plus, X, Phone, Wrench, Clock, Package, FileText, ChevronRight,
-  Check, DollarSign, Shield, Lock, Calendar, AlertTriangle
+  Check, DollarSign, Shield, Lock, Calendar
 } from 'lucide-react';
 
 const COLUMN_ORDER: OrderStatus[] = ['por_revisar', 'en_reparacion', 'esperando_refaccion', 'listo', 'entregado'];
 const LOCK_TYPES = ['Sin bloqueo','Patrón','PIN','Contraseña','Cuenta Google','iCloud','MDM','Otro'];
 
-// Helper para calcular días restantes de garantía
 function getWarrantyInfo(order: RepairOrder) {
   if (!order.warranty_ends_at) return null;
   const endDate = new Date(order.warranty_ends_at);
   const today = new Date();
   const diffTime = endDate.getTime() - today.getTime();
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
   if (diffDays < 0) return { expired: true, days: Math.abs(diffDays), text: `Vencida hace ${Math.abs(diffDays)} días` };
   if (diffDays === 0) return { expired: false, days: 0, text: 'Vence hoy' };
   return { expired: false, days: diffDays, text: `${diffDays} días restantes` };
@@ -61,14 +59,12 @@ export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: 
     if (!draggingId) return;
     const order = orders.find((o) => o.id === draggingId);
     if (!order) return;
-
     const prevStatus = order.status;
     setOrders((prev) => prev.map((o) => o.id === draggingId? {
-    ...o, status,
+   ...o, status,
       ready_at: status === 'listo'? new Date().toISOString() : o.ready_at,
       delivered_at: status === 'entregado'? new Date().toISOString() : o.delivered_at,
     } as any : o));
-
     try {
       await orderAPI.updateStatus(order.id, status);
       onStatusChange?.(order.id, status);
@@ -139,17 +135,17 @@ export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: 
           onClose={() => setSelectedOrder(null)}
           products={apiProducts}
           onAddPart={async (productId: string, qty: number) => {
-  try {
-    const res = await orderAPI.addPart(selectedOrder.id, { product_id: productId, quantity: qty });
-    const newPart = res.data.part;
-    const updatedOrder = res.data.order;
-    setOrders((prev) => prev.map((o) => o.id === selectedOrder.id? {...o, parts_used: [...(o.parts_used || []), newPart], cost_parts: updatedOrder.cost_parts, total: updatedOrder.total } as any : o));
-    setSelectedOrder((prev) => prev? {...prev, parts_used: [...(prev.parts_used || []), newPart], cost_parts: updatedOrder.cost_parts, total: updatedOrder.total } as any : null);
-    setApiProducts((prev) => prev.map((p) => p.id === productId? {...p, stock: Math.max(0, p.stock - qty) } : p));
-  } catch (err: any) {
-    alert(err.response?.data?.error || 'Error agregando refacción');
-  }
-}}
+            try {
+              const res = await orderAPI.addPart(selectedOrder.id, { product_id: productId, quantity: qty });
+              const newPart = res.data.part;
+              const updatedOrder = res.data.order;
+              setOrders((prev) => prev.map((o) => o.id === selectedOrder.id? {...o, parts_used: [...(o.parts_used || []), newPart], cost_parts: updatedOrder.cost_parts, total: updatedOrder.total } as any : o));
+              setSelectedOrder((prev) => prev? {...prev, parts_used: [...(prev.parts_used || []), newPart], cost_parts: updatedOrder.cost_parts, total: updatedOrder.total } as any : null);
+              setApiProducts((prev) => prev.map((p) => p.id === productId? {...p, stock: Math.max(0, p.stock - qty) } : p));
+            } catch (err: any) {
+              alert(err.response?.data?.error || 'Error agregando refacción');
+            }
+          }}
           onStatusChange={async (newStatus: OrderStatus) => {
             try {
               await orderAPI.updateStatus(selectedOrder.id, newStatus);
@@ -168,13 +164,13 @@ export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: 
           onClose={() => setShowCreate(false)}
           onCreate={async (data: any) => {
             try {
-    const res = await orderAPI.create(data);
-    setOrders((prev) => [...prev, res.data.order]);
-    setShowCreate(false);
-  } catch (err: any) {
-    alert(err.response?.data?.error || 'Error creando orden');
-  }
-}}
+              const res = await orderAPI.create(data);
+              setOrders((prev) => [...prev, res.data.order]);
+              setShowCreate(false);
+            } catch (err: any) {
+              alert(err.response?.data?.error || 'Error creando orden');
+            }
+          }}
         />
       )}
     </div>
@@ -185,22 +181,14 @@ function OrderCard({ order, dragging, onDragStart, onDragEnd, onClick }: any) {
   const saldo = (order.total || 0) - (order.advance_payment || 0);
   const warrantyInfo = getWarrantyInfo(order);
   const status = order.status as OrderStatus;
-
   return (
-    <div
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onClick={onClick}
-      className={`card p-3 cursor-pointer hover:shadow-md ${dragging? 'opacity-50' : ''}`}
-    >
+    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick} className={`card p-3 cursor-pointer hover:shadow-md ${dragging? 'opacity-50' : ''}`}>
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-bold text-primary-600">{order.folio}</span>
         <span className={`badge ${ORDER_STATUS_CONFIG[status].color}`}>{ORDER_STATUS_CONFIG[status].label}</span>
       </div>
       <p className="text-sm font-semibold">{order.customer_name}</p>
       <p className="text-xs text-ink-500 mb-2">{order.device_brand} {order.device_model}</p>
-
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         {order.lock_type && order.lock_type!== 'Sin bloqueo' && (
           <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded flex items-center gap-1">
@@ -218,15 +206,13 @@ function OrderCard({ order, dragging, onDragStart, onDragEnd, onClick }: any) {
           </span>
         )}
       </div>
-
       <p className="text-xs text-ink-400 line-clamp-2 mb-2">{order.problem_description}</p>
-
       <div className="flex items-center justify-between pt-2 border-t">
         <span className="text-xs text-ink-400 flex items-center gap-1"><Clock className="w-3 h-3" />{formatDateTime(order.created_at)}</span>
         {order.total > 0 && (
           <div className="text-right">
             <span className="text-sm font-bold">{formatCurrency(order.total)}</span>
-            {saldo > 0 && <p className="text-xs text-red-600">Saldo: {formatCurrency(saldo)}</p>}
+            {saldo > 0 && <p className="text-xs text-red-600 font-bold">Debe: {formatCurrency(saldo)}</p>}
           </div>
         )}
       </div>
@@ -239,10 +225,8 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onStatusChange 
   const [showPartPicker, setShowPartPicker] = useState(false);
   const [partQty, setPartQty] = useState(1);
   const statusOptions: OrderStatus[] = ['por_revisar', 'en_reparacion', 'esperando_refaccion', 'listo', 'entregado'];
-
   const saldo = (order.total || 0) - (order.advance_payment || 0);
   const warrantyInfo = getWarrantyInfo(order);
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="card w-full max-w-2xl max-h- flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -256,13 +240,11 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onStatusChange 
           </div>
           <button onClick={onClose}><X className="w-5 h-5" /></button>
         </div>
-
         <div className="flex gap-1 px-6 pt-4 border-b overflow-x-auto">
           {([{ key: 'info', label: 'Info', icon: FileText }, { key: 'diagnostic', label: 'Diagnóstico', icon: Wrench }, { key: 'parts', label: 'Refacciones', icon: Package }, { key: 'warranty', label: 'Garantía', icon: Shield }] as const).map(({ key, label, icon: Icon }) => (
             <button key={key} onClick={() => setActiveTab(key)} className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 whitespace-nowrap ${activeTab === key? 'border-primary-600 text-primary-600' : 'border-transparent text-ink-500'}`}><Icon className="w-4 h-4" /> {label}</button>
           ))}
         </div>
-
         <div className="flex-1 overflow-auto p-6">
           {activeTab === 'info' && (
             <div className="space-y-4">
@@ -274,18 +256,21 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onStatusChange 
                 <div><p className="text-xs text-ink-400 uppercase font-semibold">Tipo de bloqueo</p><p className="text-sm font-medium flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> {order.lock_type || 'Sin bloqueo'}</p></div>
               </div>
               <div><p className="text-xs text-ink-400 uppercase font-semibold mb-1">Problema</p><p className="text-sm bg-ink-50 rounded-lg p-3">{order.problem_description}</p></div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-ink-50 rounded-lg p-3 text-center"><p className="text-xs text-ink-400">Refacciones</p><p className="text-lg font-bold">{formatCurrency(order.cost_parts || 0)}</p></div>
                 <div className="bg-ink-50 rounded-lg p-3 text-center"><p className="text-xs text-ink-400">Mano obra</p><p className="text-lg font-bold">{formatCurrency(order.cost_labor || 0)}</p></div>
                 <div className="bg-blue-50 rounded-lg p-3 text-center"><p className="text-xs text-blue-600">Anticipo</p><p className="text-lg font-bold text-blue-700">{formatCurrency(order.advance_payment || 0)}</p></div>
                 <div className="bg-primary-50 rounded-lg p-3 text-center"><p className="text-xs text-primary-600">Total</p><p className="text-lg font-bold text-primary-700">{formatCurrency(order.total || 0)}</p></div>
               </div>
-
-              {saldo > 0 && (
+              {saldo > 0? (
                 <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 text-center">
                   <p className="text-xs text-red-600 font-semibold uppercase">Saldo pendiente</p>
                   <p className="text-2xl font-bold text-red-700">{formatCurrency(saldo)}</p>
+                </div>
+              ) : order.total > 0 && (
+                <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4 text-center">
+                  <p className="text-xs text-green-600 font-semibold uppercase">¡Pagado completo!</p>
+                  <p className="text-2xl font-bold text-green-700">{formatCurrency(order.total)}</p>
                 </div>
               )}
             </div>
@@ -327,7 +312,6 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onStatusChange 
                   )}
                 </div>
               </div>
-
               {order.warranty_ends_at && (
                 <div className={`rounded-lg p-4 border-2 ${warrantyInfo?.expired? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
                   <div className="flex items-center gap-2 mb-2">
@@ -342,7 +326,6 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onStatusChange 
                   </p>
                 </div>
               )}
-
               {!order.warranty_ends_at && (
                 <p className="text-sm text-ink-400 text-center py-6">
                   La garantía se activa cuando cambias el estado a "Entregado"
@@ -351,7 +334,6 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onStatusChange 
             </div>
           )}
         </div>
-
         <div className="border-t p-4 flex items-center gap-2 flex-wrap">
           <span className="text-sm text-ink-500 font-medium">Cambiar estado:</span>
           {statusOptions.map((s) => (
@@ -359,7 +341,6 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onStatusChange 
           ))}
         </div>
       </div>
-
       {showPartPicker && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setShowPartPicker(false)}>
           <div className="card w-full max-w-md p-5 max-h- flex flex-col" onClick={(e) => e.stopPropagation()}>
@@ -384,9 +365,10 @@ function CreateOrderModal({ onClose, onCreate }: any) {
   const [form, setForm] = useState({
     customer_name: '', customer_phone: '', device_type: 'Smartphone',
     device_brand: '', device_model: '', problem_description: '',
-    advance_payment: 0, lock_type: 'Sin bloqueo', warranty_value: 10, warranty_unit: 'Días' as 'Días' | 'Meses'
+    total: 0, advance_payment: 0,
+    lock_type: 'Sin bloqueo', warranty_value: 10, warranty_unit: 'Días' as 'Días' | 'Meses'
   });
-
+  const saldo = (form.total || 0) - (form.advance_payment || 0);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="card w-full max-w-lg p-6 max-h- overflow-auto" onClick={(e) => e.stopPropagation()}>
@@ -402,19 +384,28 @@ function CreateOrderModal({ onClose, onCreate }: any) {
             <div><label className="label">Modelo</label><input className="input" value={form.device_model} onChange={(e) => setForm({...form, device_model: e.target.value })} /></div>
           </div>
           <div><label className="label">Problema reportado</label><textarea className="input min-h-" value={form.problem_description} onChange={(e) => setForm({...form, problem_description: e.target.value })} /></div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="label flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" /> Anticipo</label><input type="number" min="0" step="0.01" className="input" value={form.advance_payment} onChange={(e) => setForm({...form, advance_payment: parseFloat(e.target.value) || 0 })} /></div>
-            <div><label className="label flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> Tipo de bloqueo</label><select className="input" value={form.lock_type} onChange={(e) => setForm({...form, lock_type: e.target.value })}>{LOCK_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
+          <div className="bg-ink-50 rounded-xl p-4 space-y-3 border-2 border-dashed border-ink-200">
+            <h4 className="font-bold text-sm flex items-center gap-2"><DollarSign className="w-4 h-4"/> Costos de reparación</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="label font-bold text-primary-700">Costo total $ *</label><input type="number" min="0" step="1" className="input font-bold text-lg border-primary-300" placeholder="0" value={form.total} onChange={(e) => setForm({...form, total: parseFloat(e.target.value) || 0 })} /></div>
+              <div><label className="label">Anticipo $</label><input type="number" min="0" step="1" className="input" placeholder="0" value={form.advance_payment} onChange={(e) => setForm({...form, advance_payment: parseFloat(e.target.value) || 0 })} /></div>
+            </div>
+            <div className={`rounded-lg p-3 text-center font-bold text-base ${saldo <= 0 && form.total > 0? 'bg-green-100 text-green-700 border-2 border-green-200' : 'bg-orange-100 text-orange-700 border-2 border-orange-200'}`}>
+              {saldo <= 0 && form.total > 0? `¡Pagado completo! ✅` : `Resta por pagar: ${formatCurrency(saldo)}`}
+              {form.advance_payment > 0 && form.total > 0 && <p className="text-xs font-normal mt-1">Anticipo: {formatCurrency(form.advance_payment)} de {formatCurrency(form.total)}</p>}
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="label flex items-center gap-1"><Shield className="w-3.5 h-3.5" /> Garantía</label><input type="number" min="1" className="input" value={form.warranty_value} onChange={(e) => setForm({...form, warranty_value: parseInt(e.target.value) || 10 })} /></div>
-            <div><label className="label">Unidad</label><select className="input" value={form.warranty_unit} onChange={(e) => setForm({...form, warranty_unit: e.target.value as 'Días' | 'Meses' })}><option>Días</option><option>Meses</option></select></div>
+            <div><label className="label flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> Tipo de bloqueo</label><select className="input" value={form.lock_type} onChange={(e) => setForm({...form, lock_type: e.target.value })}>{LOCK_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><label className="label flex items-center gap-1"><Shield className="w-3.5 h-3.5" /> Garantía</label><input type="number" min="1" className="input" value={form.warranty_value} onChange={(e) => setForm({...form, warranty_value: parseInt(e.target.value) || 10 })} /></div>
+              <div><label className="label">Unidad</label><select className="input" value={form.warranty_unit} onChange={(e) => setForm({...form, warranty_unit: e.target.value as 'Días' | 'Meses' })}><option>Días</option><option>Meses</option></select></div>
+            </div>
           </div>
         </div>
         <div className="flex gap-3 mt-6">
           <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
-          <button onClick={() => onCreate({...form })} disabled={!form.customer_name ||!form.device_brand} className="btn-primary flex-1"><Check className="w-4 h-4" /> Crear orden</button>
+          <button onClick={() => onCreate({...form, cost_labor: form.total })} disabled={!form.customer_name ||!form.device_brand} className="btn-primary flex-1"><Check className="w-4 h-4" /> Crear orden</button>
         </div>
       </div>
     </div>
