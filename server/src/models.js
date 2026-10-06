@@ -119,6 +119,20 @@ export const RepairOrder = sequelize.define('RepairOrder', {
   technician_name: { type: DataTypes.STRING(150) },
   ready_at: { type: DataTypes.DATE, allowNull: true },
   delivered_at: { type: DataTypes.DATE, allowNull: true },
+
+  // ===== NUEVOS CAMPOS GARANTÍA Y BLOQUEO =====
+  advance_payment: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
+  lock_type: { 
+    type: DataTypes.ENUM('Sin bloqueo','Patrón','PIN','Contraseña','Cuenta Google','iCloud','MDM','Otro'),
+    defaultValue: 'Sin bloqueo'
+  },
+  warranty_value: { type: DataTypes.INTEGER, defaultValue: 10 },
+  warranty_unit: { 
+    type: DataTypes.ENUM('Días','Meses'),
+    defaultValue: 'Días'
+  },
+  warranty_ends_at: { type: DataTypes.DATE, allowNull: true },
+
 }, { tableName: 'repair_orders', updatedAt: 'updated_at', createdAt: 'created_at' });
 
 // ===== ORDER PARTS =====
