@@ -5,7 +5,7 @@ import type { Product, Category, Customer, SaleItem, PaymentMethod } from '@/typ
 import {
   Search, ShoppingCart, Plus, Minus, Trash2, Percent, X, User,
   CreditCard, Banknote, Smartphone, Clock, Check, AlertTriangle,
-  Tag, Package,
+  Package,
 } from 'lucide-react';
 
 interface POSProps {
@@ -15,7 +15,7 @@ interface POSProps {
 export default function POS({ onSaleComplete }: POSProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [customers] = useState<Customer[]>([]); // si tienes /customers lo agregamos
+  const [customers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [search, setSearch] = useState('');
@@ -49,8 +49,11 @@ export default function POS({ onSaleComplete }: POSProps) {
 
   useEffect(() => { loadData(); }, []);
 
+  // ESCONDE EL ANTICIPO DE LA VITRINA (ya no verás 999999 pz)
+  const visibleProducts = useMemo(() => products.filter((p: any) => p.sku!== 'ANTICIPO' &&!p.name.toLowerCase().includes('anticipo')), [products]);
+
   const filteredProducts = useMemo(() => {
-    let list = products;
+    let list = visibleProducts;
     if (activeCategory!== 'all') list = list.filter((p) => p.category_id === activeCategory);
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -61,9 +64,35 @@ export default function POS({ onSaleComplete }: POSProps) {
       );
     }
     return list;
-  }, [products, activeCategory, search]);
+  }, [visibleProducts, activeCategory, search]);
 
-  const favoriteProducts = useMemo(() => products.filter((p: any) => p.favorite), [products]);
+  const favoriteProducts = useMemo(() => visibleProducts.filter((p: any) => p.favorite), [visibleProducts]);
+
+  // SI VIENES DE ORDENES, CARGA EL ANTICIPO AUTOMATICO AL CARRITO
+  useEffect(() => {
+    if (loading) return;
+    const pendingRaw = localStorage.getItem('pendingAnticipo');
+    if (!pendingRaw) return;
+    try {
+      const pending = JSON.parse(pendingRaw);
+      const anticipoProduct = products.find((p: any) => p.sku === 'ANTICIPO');
+      const prodId = anticipoProduct?.id || `ANTICIPO-${pending.folio}`;
+
+      const customItem: SaleItem = {
+        product_id: prodId,
+        name: `Anticipo Orden ${pending.folio} - ${pending.customer}${pending.device? ` - ${pending.device}` : ''}`,
+        price: parseFloat(pending.amount),
+        quantity: 1,
+        discount: 0,
+      };
+
+      setCart([customItem]);
+      setPaymentMethod(pending.method || 'efectivo');
+      setCashReceived(String(pending.amount));
+      setShowCheckout(true);
+      localStorage.removeItem('pendingAnticipo');
+    } catch {}
+  }, [products, loading]);
 
   const subtotal = useMemo(() => cart.reduce((s, i) => s + i.price * i.quantity, 0), [cart]);
   const totalDiscount = useMemo(() => cart.reduce((s, i) => s + i.discount, 0), [cart]);
@@ -86,12 +115,11 @@ export default function POS({ onSaleComplete }: POSProps) {
   const updateQty = (id: string, delta: number) => {
     setCart((prev) => {
       const product = products.find((p) => p.id === id);
-      if (!product) return prev;
       return prev.map((i) => {
         if (i.product_id!== id) return i;
         const newQty = i.quantity + delta;
         if (newQty <= 0) return null as any;
-        if (newQty > product.stock) return i;
+        if (product && newQty > product.stock &&!String(id).startsWith('ANTICIPO')) return i;
         return {...i, quantity: newQty };
       }).filter(Boolean) as SaleItem[];
     });
@@ -123,10 +151,15 @@ export default function POS({ onSaleComplete }: POSProps) {
     setProcessing(true);
     setSaleError(null);
     try {
+      const isAnticipoSale = cart.some(i => String(i.product_id).startsWith('ANTICIPO') || i.name.toLowerCase().includes('anticipo orden'));
+
       await saleAPI.create({
         items: cart.map((i) => ({
-          product_id: i.product_id, name: i.name, price: i.price,
-          quantity: i.quantity, discount: i.discount,
+          product_id: isAnticipoSale? undefined : i.product_id,
+          name: i.name,
+          price: i.price,
+          quantity: i.quantity,
+          discount: i.discount,
         })),
         payment_method: paymentMethod,
         cash_received: paymentMethod === 'efectivo'? parseFloat(cashReceived) || 0 : 0,
@@ -134,11 +167,13 @@ export default function POS({ onSaleComplete }: POSProps) {
         discount: totalDiscount,
       });
 
-      setProducts((prev) => prev.map((p) => {
-        const cartItem = cart.find((i) => i.product_id === p.id);
-        if (cartItem) return {...p, stock: Math.max(0, p.stock - cartItem.quantity) };
-        return p;
-      }));
+      if (!isAnticipoSale) {
+        setProducts((prev) => prev.map((p) => {
+          const cartItem = cart.find((i) => i.product_id === p.id);
+          if (cartItem) return {...p, stock: Math.max(0, p.stock - cartItem.quantity) };
+          return p;
+        }));
+      }
 
       onSaleComplete(cart, total, paymentMethod, selectedCustomer?.name?? null);
       setShowCheckout(false);
@@ -147,7 +182,7 @@ export default function POS({ onSaleComplete }: POSProps) {
       setPaymentMethod('efectivo');
       setSaleCompleteMsg(true);
       setTimeout(() => setSaleCompleteMsg(false), 2500);
-      await loadData(); // recarga stock real de MySQL
+      await loadData();
     } catch (err: any) {
       setSaleError(err.response?.data?.error || 'Error al procesar venta');
     } finally {
@@ -233,7 +268,7 @@ export default function POS({ onSaleComplete }: POSProps) {
           ) : (
             <div className="divide-y">
               {cart.map((item) => (
-                <div key={item.product_id} className="px-4 py-3">
+                <div key={item.product_id} className="px-4 py-3 bg-green-50/50">
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <p className="text-sm font-medium flex-1">{item.name}</p>
                     <button onClick={() => removeFromCart(item.product_id)}><X className="w-4 h-4" /></button>
@@ -245,14 +280,7 @@ export default function POS({ onSaleComplete }: POSProps) {
                       <button onClick={() => updateQty(item.product_id, 1)} className="w-7 h-7 rounded-md bg-ink-100 flex items-center justify-center"><Plus className="w-3.5 h-3.5" /></button>
                     </div>
                     <div className="text-right">
-                      <div className="flex items-center gap-1.5">
-                        {lineDiscountEdit === item.product_id? (
-                          <input type="number" className="w-16 text-xs rounded border px-1 py-0.5 text-right" autoFocus onBlur={(e) => { updateDiscount(item.product_id, parseFloat(e.target.value) || 0); setLineDiscountEdit(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { updateDiscount(item.product_id, parseFloat((e.target as HTMLInputElement).value) || 0); setLineDiscountEdit(null); } }} />
-                        ) : (
-                          <button onClick={() => setLineDiscountEdit(item.product_id)} className={`flex items-center gap-0.5 text-xs ${item.discount > 0? 'text-success-600 font-semibold' : 'text-ink-400'}`}><Percent className="w-3 h-3" />{item.discount > 0? `-${formatCurrency(item.discount)}` : 'Desc'}</button>
-                        )}
-                        <span className="text-sm font-bold">{formatCurrency(item.price * item.quantity - item.discount)}</span>
-                      </div>
+                      <span className="text-sm font-bold">{formatCurrency(item.price * item.quantity - item.discount)}</span>
                     </div>
                   </div>
                 </div>
@@ -262,30 +290,23 @@ export default function POS({ onSaleComplete }: POSProps) {
         </div>
 
         <div className="border-t p-4 space-y-3">
-          {heldSales.length > 0 && (
-            <div className="flex items-center gap-2 text-xs bg-warning-50 rounded-lg px-3 py-2">
-              <Clock className="w-4 h-4" /><span>{heldSales.length} en espera</span>
-              <button onClick={() => resumeSale(heldSales.length - 1)} className="ml-auto font-semibold">Reanudar</button>
-            </div>
-          )}
           <div className="space-y-1">
             <div className="flex justify-between text-sm text-ink-500"><span>Subtotal</span><span>{formatCurrency(subtotal)}</span></div>
             {totalDiscount > 0 && <div className="flex justify-between text-sm text-success-600"><span>Descuentos</span><span>-{formatCurrency(totalDiscount)}</span></div>}
             <div className="flex justify-between items-baseline pt-1"><span className="text-sm font-semibold">Total</span><span className="text-3xl font-bold tabular-nums">{formatCurrency(total)}</span></div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button onClick={holdSale} disabled={cart.length === 0} className="btn-secondary text-xs py-2"><Clock className="w-4 h-4" /> Pausar</button>
-            <button onClick={clearCart} disabled={cart.length === 0} className="btn-secondary text-xs py-2"><Trash2 className="w-4 h-4" /> Vaciar</button>
-          </div>
-          <button onClick={() => setShowCheckout(true)} disabled={cart.length === 0} className="btn-primary w-full py-3 text-base"><CreditCard className="w-5 h-5" /> Cobrar</button>
+          <button onClick={() => setShowCheckout(true)} disabled={cart.length === 0} className="btn-primary w-full py-3 text-base"><CreditCard className="w-5 h-5" /> Cobrar {cart[0]?.name.includes('Anticipo')? 'Anticipo' : ''}</button>
         </div>
       </div>
 
       {showCheckout && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() =>!processing && setShowCheckout(false)}>
           <div className="card w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5"><h2 className="text-xl font-bold">Cobrar Venta</h2><button onClick={() => setShowCheckout(false)}><X className="w-5 h-5" /></button></div>
-            <div className="bg-ink-50 rounded-xl p-4 mb-4 text-center"><p className="text-sm text-ink-500 mb-1">Total</p><p className="text-4xl font-bold">{formatCurrency(total)}</p></div>
+            <div className="flex items-center justify-between mb-5"><h2 className="text-xl font-bold">Cobrar {cart[0]?.name.includes('Anticipo')? 'Anticipo' : 'Venta'}</h2><button onClick={() => setShowCheckout(false)}><X className="w-5 h-5" /></button></div>
+            <div className="bg-ink-50 rounded-xl p-3 mb-4">
+              {cart.map(i => <p key={i.product_id} className="text-sm font-medium">{i.name} - {formatCurrency(i.price)}</p>)}
+            </div>
+            <div className="bg-primary-50 rounded-xl p-4 mb-4 text-center"><p className="text-sm text-ink-500 mb-1">Total a cobrar</p><p className="text-4xl font-bold">{formatCurrency(total)}</p></div>
             <div className="grid grid-cols-4 gap-2 mb-4">
               {paymentMethods.map(({ method, label, icon: Icon }) => (
                 <button key={method} onClick={() => setPaymentMethod(method)} className={`flex flex-col items-center gap-1 py-3 rounded-lg border-2 ${paymentMethod === method? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-ink-200 text-ink-500'}`}><Icon className="w-5 h-5" /><span className="text-xs font-semibold">{label}</span></button>
@@ -298,7 +319,7 @@ export default function POS({ onSaleComplete }: POSProps) {
               </div>
             )}
             {saleError && <div className="bg-error-50 text-error-700 rounded-lg p-3 mb-4 text-sm flex items-center gap-2"><AlertTriangle className="w-4 h-4" />{saleError}</div>}
-            <button onClick={completeSale} disabled={!canCheckout || processing} className="btn-primary w-full py-3 text-base">{processing? 'Procesando...' : <><Check className="w-5 h-5" /> Confirmar venta</>}</button>
+            <button onClick={completeSale} disabled={!canCheckout || processing} className="btn-primary w-full py-3 text-base">{processing? 'Procesando...' : <><Check className="w-5 h-5" /> Confirmar {cart[0]?.name.includes('Anticipo')? 'anticipo' : 'venta'} {formatCurrency(total)}</>}</button>
           </div>
         </div>
       )}
@@ -306,7 +327,7 @@ export default function POS({ onSaleComplete }: POSProps) {
       {saleCompleteMsg && (
         <div className="fixed bottom-6 right-6 z-50">
           <div className="bg-success-600 text-white rounded-xl px-5 py-3 shadow-lg flex items-center gap-3">
-            <Check className="w-6 h-6" /><div><p className="font-bold">¡Venta completada!</p><p className="text-sm text-success-100">Stock actualizado en MySQL</p></div>
+            <Check className="w-6 h-6" /><div><p className="font-bold">¡Venta completada!</p><p className="text-sm text-success-100">Stock actualizado</p></div>
           </div>
         </div>
       )}

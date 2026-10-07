@@ -89,7 +89,7 @@ export const saleAPI = {
   list: () => api.get('/sales'),
   get: (id: string) => api.get(`/sales/${id}`),
   create: (data: {
-    items: Array<{ product_id: string; name: string; price: number; quantity: number; discount?: number }>;
+    items: Array<{ product_id?: string; name: string; price: number; quantity: number; discount?: number }>;
     payment_method: string;
     cash_received?: number;
     customer_id?: string;
