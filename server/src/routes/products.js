@@ -42,7 +42,7 @@ router.get('/low-stock', authorize(['owner', 'technician', 'secretary', 'secreta
   res.json({ products: lowStock });
 });
 
-// 3. Movimientos - antes de /:id también
+// Movimientos - antes de /:id también
 router.get('/:id/movements', authorize(['owner', 'technician', 'secretary', 'secretaria', 'cashier', 'admin']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
@@ -53,11 +53,51 @@ router.get('/:id/movements', authorize(['owner', 'technician', 'secretary', 'sec
   res.json({ movements });
 });
 
+// ============ CATEGORIAS CRUD COMPLETO ============
+// Categories POST
+router.post('/categories', authorize(['owner', 'technician']), async (req, res) => {
+  const tenantId = requireTenantId(req, res);
+  if (!tenantId) return;
+  const { name, color, icon } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'Nombre requerido' });
+  const category = await Category.create({
+    id: uuidv4(), tenant_id: tenantId,
+    name: name.trim(), color: color || '#3b82f6', icon: icon || 'Package',
+  });
+  res.status(201).json({ category });
+});
+
+// Categories PUT - EDITAR
+router.put('/categories/:id', authorize(['owner', 'technician']), async (req, res) => {
+  const tenantId = requireTenantId(req, res);
+  if (!tenantId) return;
+  const category = await Category.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
+  if (!category) return res.status(404).json({ error: 'Categoría no encontrada' });
+  const { name, color, icon } = req.body;
+  if (name !== undefined) category.name = name.trim();
+  if (color !== undefined) category.color = color;
+  if (icon !== undefined) category.icon = icon;
+  await category.save();
+  res.json({ category });
+});
+
+// Categories DELETE - ELIMINAR
+router.delete('/categories/:id', authorize(['owner', 'technician']), async (req, res) => {
+  const tenantId = requireTenantId(req, res);
+  if (!tenantId) return;
+  const category = await Category.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
+  if (!category) return res.status(404).json({ error: 'Categoría no encontrada' });
+  // Verificar que no tenga productos
+  const count = await Product.count({ where: { category_id: category.id, tenant_id: tenantId } });
+  if (count > 0) return res.status(400).json({ error: `No puedes eliminar: tiene ${count} producto(s) asignados` });
+  await category.destroy();
+  res.json({ message: 'Categoría eliminada' });
+});
+
 // 4. Obtener un producto
 router.get('/:id', authorize(['owner', 'technician', 'secretary', 'secretaria', 'cashier', 'admin']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
-  // Evita que /categories/all caiga aquí
   if (req.params.id === 'categories') return res.status(404).json({ error: 'Ruta no encontrada' });
   const product = await Product.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
   if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
@@ -125,18 +165,6 @@ router.delete('/:id', authorize(['owner']), async (req, res) => {
   if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
   await product.destroy();
   res.json({ message: 'Producto eliminado' });
-});
-
-// Categories POST
-router.post('/categories', authorize(['owner', 'technician']), async (req, res) => {
-  const tenantId = requireTenantId(req, res);
-  if (!tenantId) return;
-  const { name, color, icon } = req.body;
-  const category = await Category.create({
-    id: uuidv4(), tenant_id: tenantId,
-    name, color: color || '#3b82f6', icon: icon || 'Package',
-  });
-  res.status(201).json({ category });
 });
 
 export default router;
