@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { Sale, SaleItem, Product, CashSession } from '../models.js';
+import { Sale, SaleItem, Product, CashSession, InventoryMovement } from '../models.js';
 import { sequelize } from '../models.js';
 import { authMiddleware, authorize, requireTenantId } from '../middleware/auth.js';
 
@@ -15,7 +15,6 @@ router.post('/', authorize(['owner','technician','cashier']), async (req, res) =
 
   const t = await sequelize.transaction();
   try {
-    // Buscar caja abierta
     const openCash = await CashSession.findOne({ where: { tenant_id: tenantId, status: 'open' }, transaction: t });
 
     const count = await Sale.count({ where: { tenant_id: tenantId }, transaction: t });
@@ -53,6 +52,22 @@ router.post('/', authorize(['owner','technician','cashier']), async (req, res) =
         if (prod.stock < it.quantity) throw new Error(`Stock insuficiente para ${prod.name}`);
         prod.stock -= it.quantity;
         await prod.save({ transaction: t });
+
+        // MOVIMIENTO POR VENTA
+        await InventoryMovement.create({
+          id: uuidv4(),
+          tenant_id: tenantId,
+          product_id: prod.id,
+          product_name: prod.name,
+          type: 'out',
+          quantity: it.quantity,
+          reason: `Venta ${folio} - POS`,
+          reference_id: sale.id,
+          reference_type: 'sale',
+          user_id: req.user.id,
+          user_name: req.user.name,
+        }, { transaction: t });
+
         productIdToSave = prod.id;
       } else {
         let anticipoProd = await Product.findOne({ where: { tenant_id: tenantId, sku: 'ANTICIPO' }, transaction: t });

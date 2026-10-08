@@ -7,7 +7,7 @@ const router = Router();
 
 router.use(authMiddleware);
 
-// 1. ESTA SIEMPRE VA PRIMERO - ANTES DE /:id
+// 1. CATEGORIAS - SIEMPRE PRIMERO
 router.get('/categories/all', authorize(['owner', 'technician', 'secretary', 'secretaria', 'cashier', 'cajera', 'receptionist', 'admin']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
@@ -15,7 +15,35 @@ router.get('/categories/all', authorize(['owner', 'technician', 'secretary', 'se
   res.json({ categories });
 });
 
-// 2. Productos - ahora secretaria SI puede ver
+// 1.1 MOVIMIENTOS GLOBALES - CRITICO ANTES DE /:id
+router.get('/movements/all', authorize(['owner', 'technician', 'secretary', 'secretaria', 'cashier', 'cajera', 'receptionist', 'admin']), async (req, res) => {
+  const tenantId = requireTenantId(req, res);
+  if (!tenantId) return;
+  try {
+    const movements = await InventoryMovement.findAll({
+      where: { tenant_id: tenantId },
+      order: [['created_at', 'DESC']],
+      limit: 500,
+    });
+    // Enriquecer nombre si falta
+    const enriched = await Promise.all(movements.map(async (m) => {
+      const json = m.toJSON();
+      if (!json.product_name && json.product_id) {
+        try {
+          const prod = await Product.findByPk(json.product_id);
+          if (prod) json.product_name = prod.name;
+        } catch {}
+      }
+      return json;
+    }));
+    res.json({ movements: enriched });
+  } catch (e) {
+    console.error('Error movements/all', e);
+    res.status(500).json({ error: 'Error obteniendo movimientos', detail: e.message });
+  }
+});
+
+// 2. Productos
 router.get('/', authorize(['owner', 'technician', 'secretary', 'secretaria', 'cashier', 'cajera', 'receptionist', 'admin']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
@@ -42,7 +70,7 @@ router.get('/low-stock', authorize(['owner', 'technician', 'secretary', 'secreta
   res.json({ products: lowStock });
 });
 
-// Movimientos - antes de /:id también
+// Movimientos por producto (antes de /:id genérico)
 router.get('/:id/movements', authorize(['owner', 'technician', 'secretary', 'secretaria', 'cashier', 'admin']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
@@ -53,8 +81,7 @@ router.get('/:id/movements', authorize(['owner', 'technician', 'secretary', 'sec
   res.json({ movements });
 });
 
-// ============ CATEGORIAS CRUD COMPLETO ============
-// Categories POST
+// ============ CATEGORIAS CRUD ============
 router.post('/categories', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
@@ -67,7 +94,6 @@ router.post('/categories', authorize(['owner', 'technician']), async (req, res) 
   res.status(201).json({ category });
 });
 
-// Categories PUT - EDITAR
 router.put('/categories/:id', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
@@ -81,13 +107,11 @@ router.put('/categories/:id', authorize(['owner', 'technician']), async (req, re
   res.json({ category });
 });
 
-// Categories DELETE - ELIMINAR
 router.delete('/categories/:id', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const category = await Category.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
   if (!category) return res.status(404).json({ error: 'Categoría no encontrada' });
-  // Verificar que no tenga productos
   const count = await Product.count({ where: { category_id: category.id, tenant_id: tenantId } });
   if (count > 0) return res.status(400).json({ error: `No puedes eliminar: tiene ${count} producto(s) asignados` });
   await category.destroy();
@@ -98,13 +122,13 @@ router.delete('/categories/:id', authorize(['owner', 'technician']), async (req,
 router.get('/:id', authorize(['owner', 'technician', 'secretary', 'secretaria', 'cashier', 'admin']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
-  if (req.params.id === 'categories') return res.status(404).json({ error: 'Ruta no encontrada' });
+  if (req.params.id === 'categories' || req.params.id === 'movements') return res.status(404).json({ error: 'Ruta no encontrada' });
   const product = await Product.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
   if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
   res.json({ product });
 });
 
-// POST - solo owner/technician pueden crear
+// POST producto
 router.post('/', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
@@ -122,6 +146,7 @@ router.post('/', authorize(['owner', 'technician']), async (req, res) => {
   if (stock && stock > 0) {
     await InventoryMovement.create({
       id: uuidv4(), tenant_id: tenantId, product_id: product.id,
+      product_name: product.name,
       type: 'in', quantity: stock, reason: 'Stock inicial',
       user_id: req.user.id, user_name: req.user.name,
     });
@@ -147,14 +172,23 @@ router.put('/:id/stock', authorize(['owner', 'technician']), async (req, res) =>
   const { quantity, reason, type = 'adjustment' } = req.body;
   const product = await Product.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
   if (!product) return res.status(404).json({ error: 'Producto no encontrado' });
-  product.stock += parseInt(quantity);
+  const qty = parseInt(quantity);
+  product.stock += qty;
   if (product.stock < 0) product.stock = 0;
   await product.save();
+
   await InventoryMovement.create({
-    id: uuidv4(), tenant_id: tenantId, product_id: product.id,
-    type, quantity: Math.abs(parseInt(quantity)), reason: reason || 'Ajuste manual',
-    user_id: req.user.id, user_name: req.user.name,
+    id: uuidv4(),
+    tenant_id: tenantId,
+    product_id: product.id,
+    product_name: product.name,
+    type: qty > 0 ? 'in' : 'out',
+    quantity: Math.abs(qty),
+    reason: reason || (qty > 0 ? 'Ajuste manual - entrada' : 'Ajuste manual - salida'),
+    user_id: req.user.id,
+    user_name: req.user.name,
   });
+
   res.json({ product });
 });
 
