@@ -11,6 +11,7 @@ import orderRoutes from './routes/orders.js';
 import saleRoutes from './routes/sales.js';
 import deliveryRoutes from './routes/deliveries.js';
 import notificationRoutes from './routes/notifications.js';
+import cashRoutes from './routes/cash.js';
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/sales', saleRoutes);
 app.use('/api/deliveries', deliveryRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/cash', cashRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {
@@ -50,9 +52,8 @@ async function start() {
     await sequelize.authenticate();
     console.log('✓ Conexión a MySQL establecida');
 
-    // Sync solo crea tablas faltantes (no borra datos)
-    // Para esquema completo usa: mysql -u root -p < schema.sql
-    await sequelize.sync({ alter: false });
+    // Usamos alter: true solo la primera vez para agregar cash_session_id si falta
+    await sequelize.sync({ alter: true });
     console.log('✓ Modelos sincronizados');
 
     app.listen(PORT, () => {
