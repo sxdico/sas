@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext';
 import { can, ROLE_LABELS, ROLE_COLORS } from '@/utils/permissions';
 import {
   Wrench, LayoutDashboard, ShoppingCart, ClipboardList, Package,
-  Users, Building2, LogOut, Bell, Menu, TrendingUp, Wallet
+  Users, Building2, LogOut, Bell, Menu, TrendingUp
 } from 'lucide-react';
 
 interface NavItem {
@@ -19,8 +19,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { label: 'Órdenes', icon: ClipboardList, page: 'orders', permission: 'ordersView' },
   { label: 'Entregas', icon: Package, page: 'deliveries', permission: 'deliveries' },
   { label: 'Inventario', icon: Package, page: 'inventory', permission: 'inventory' },
-  { label: 'Corte de Caja', icon: Wallet, page: 'cash', permission: 'reports' },
-  { label: 'Reportes', icon: TrendingUp, page: 'reports', permission: 'reports' },
+  { label: 'Finanzas', icon: TrendingUp, page: 'reports', permission: 'reports' },
   { label: 'Usuarios', icon: Users, page: 'users', permission: 'users' },
   { label: 'Talleres', icon: Building2, page: 'tenants', permission: 'tenants' },
 ];

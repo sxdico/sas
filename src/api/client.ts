@@ -100,6 +100,10 @@ export const cashAPI = {
   close: (data: { closing_amount: number; notes?: string }) => api.post('/cash/close', data),
   history: () => api.get('/cash/history'),
   get: (id: string) => api.get(`/cash/${id}`),
+  // NUEVO PARA FINANZAS / SALIDAS
+  expenses: () => api.get('/cash/expenses'),
+  createExpense: (data: { amount: number; reason: string; category?: string }) => api.post('/cash/expenses', data),
+  deleteExpense: (id: string) => api.delete(`/cash/expenses/${id}`),
 };
 
 // ===== Sales API =====

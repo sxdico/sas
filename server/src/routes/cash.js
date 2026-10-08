@@ -1,132 +1,191 @@
 import { Router } from 'express';
-import { v4 as uuidv4 } from 'uuid';
-import { CashSession, Sale, SaleItem } from '../models.js';
-import { sequelize } from '../models.js';
-import { authMiddleware, authorize, requireTenantId } from '../middleware/auth.js';
+import { DataTypes, UUIDV4 } from 'sequelize';
+import { CashSession, Sale, sequelize } from '../models.js';
+import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
-router.use(authMiddleware);
 
-// GET Sesion actual abierta
-router.get('/current', authorize(['owner','technician','cashier']), async (req, res) => {
-  const tenantId = requireTenantId(req, res);
-  if (!tenantId) return;
-  const session = await CashSession.findOne({
-    where: { tenant_id: tenantId, status: 'open' },
-    order: [['opened_at','DESC']]
-  });
-  if (!session) return res.json({ session: null });
+// Modelo Expense creado aquí para no romper models.js si no existe
+export const Expense = sequelize.define('Expense', {
+  id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
+  tenant_id: { type: DataTypes.STRING(36), allowNull: false },
+  cash_session_id: { type: DataTypes.STRING(36), allowNull: true },
+  amount: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
+  reason: { type: DataTypes.STRING(255), allowNull: false },
+  category: { type: DataTypes.STRING(50), defaultValue: 'gasto_general' },
+  user_id: { type: DataTypes.STRING(36) },
+  user_name: { type: DataTypes.STRING(150) },
+}, { tableName: 'expenses', createdAt: 'created_at', updatedAt: 'updated_at' });
 
-  // Calcular ventas de esta sesion
-  const sales = await Sale.findAll({ where: { tenant_id: tenantId, cash_session_id: session.id } });
-  const summary = {
-    total: sales.reduce((s, sale) => s + parseFloat(sale.total), 0),
-    count: sales.length,
-    efectivo: sales.filter(s => s.payment_method === 'efectivo').reduce((s, sale) => s + parseFloat(sale.total), 0),
-    tarjeta: sales.filter(s => s.payment_method === 'tarjeta').reduce((s, sale) => s + parseFloat(sale.total), 0),
-    transferencia: sales.filter(s => s.payment_method === 'transferencia').reduce((s, sale) => s + parseFloat(sale.total), 0),
-    credito: sales.filter(s => s.payment_method === 'credito').reduce((s, sale) => s + parseFloat(sale.total), 0),
-  };
-  res.json({ session, sales, summary });
-});
+router.use(authenticate);
 
-// POST Abrir caja
-router.post('/open', authorize(['owner','technician','cashier']), async (req, res) => {
-  const tenantId = requireTenantId(req, res);
-  if (!tenantId) return;
-  const { opening_amount } = req.body;
-
-  // Verificar que no haya caja abierta
-  const existing = await CashSession.findOne({ where: { tenant_id: tenantId, status: 'open' } });
-  if (existing) return res.status(400).json({ error: 'Ya hay una caja abierta. Cierra la actual antes de abrir otra.' });
-
-  const count = await CashSession.count({ where: { tenant_id: tenantId } });
-  const folio = `CAJA-${String(count + 1).padStart(3, '0')}`;
-
-  const session = await CashSession.create({
-    id: uuidv4(),
-    tenant_id: tenantId,
-    folio,
-    opening_amount: opening_amount || 0,
-    status: 'open',
-    user_open_id: req.user.id,
-    user_open_name: req.user.name,
-    opened_at: new Date(),
-  });
-
-  res.status(201).json({ session });
-});
-
-// POST Cerrar caja
-router.post('/close', authorize(['owner','technician','cashier']), async (req, res) => {
-  const tenantId = requireTenantId(req, res);
-  if (!tenantId) return;
-  const { closing_amount, notes } = req.body;
-
-  const session = await CashSession.findOne({ where: { tenant_id: tenantId, status: 'open' } });
-  if (!session) return res.status(404).json({ error: 'No hay caja abierta' });
-
-  const t = await sequelize.transaction();
+// GET /current
+router.get('/current', async (req, res) => {
   try {
-    const sales = await Sale.findAll({ where: { tenant_id: tenantId, cash_session_id: session.id }, transaction: t });
+    const tenant_id = req.user.tenant_id;
+    const session = await CashSession.findOne({ where: { tenant_id, status: 'open' }, order: [['opened_at', 'DESC']] });
+    if (!session) return res.json({ session: null, summary: null });
 
-    const totalSales = sales.reduce((s, sale) => s + parseFloat(sale.total), 0);
-    const totalEfectivo = sales.filter(s => s.payment_method === 'efectivo').reduce((s, sale) => s + parseFloat(sale.total), 0);
-    const totalTarjeta = sales.filter(s => s.payment_method === 'tarjeta').reduce((s, sale) => s + parseFloat(sale.total), 0);
-    const totalTransferencia = sales.filter(s => s.payment_method === 'transferencia').reduce((s, sale) => s + parseFloat(sale.total), 0);
-    const totalCredito = sales.filter(s => s.payment_method === 'credito').reduce((s, sale) => s + parseFloat(sale.total), 0);
+    const sales = await Sale.findAll({ where: { cash_session_id: session.id } });
+    const expenses = await Expense.findAll({ where: { cash_session_id: session.id } });
 
-    const opening = parseFloat(session.opening_amount);
-    const expected = opening + totalEfectivo;
-    const closing = parseFloat(closing_amount || 0);
-    const difference = closing - expected;
-
-    session.closing_amount = closing;
-    session.expected_amount = expected;
-    session.difference = difference;
-    session.total_sales = totalSales;
-    session.total_efectivo = totalEfectivo;
-    session.total_tarjeta = totalTarjeta;
-    session.total_transferencia = totalTransferencia;
-    session.total_credito = totalCredito;
-    session.sales_count = sales.length;
-    session.status = 'closed';
-    session.user_close_id = req.user.id;
-    session.user_close_name = req.user.name;
-    session.closed_at = new Date();
-    session.notes = notes || null;
-
-    await session.save({ transaction: t });
-    await t.commit();
-
-    res.json({ session, summary: { totalSales, totalEfectivo, totalTarjeta, totalTransferencia, totalCredito, opening, expected, closing, difference, count: sales.length } });
+    const summary = {
+      count: sales.length,
+      total: sales.reduce((s, x) => s + Number(x.total), 0),
+      efectivo: sales.filter(x => x.payment_method === 'efectivo').reduce((s, x) => s + Number(x.total), 0),
+      tarjeta: sales.filter(x => x.payment_method === 'tarjeta').reduce((s, x) => s + Number(x.total), 0),
+      transferencia: sales.filter(x => x.payment_method === 'transferencia').reduce((s, x) => s + Number(x.total), 0),
+      credito: sales.filter(x => x.payment_method === 'credito').reduce((s, x) => s + Number(x.total), 0),
+      total_salidas: expenses.reduce((s, x) => s + Number(x.amount), 0),
+      salidas_count: expenses.length,
+    };
+    res.json({ session, summary, expenses });
   } catch (err) {
-    await t.rollback();
-    console.error('ERROR CERRANDO CAJA:', err);
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Error al obtener caja actual' });
   }
 });
 
-// GET Historial de cajas
-router.get('/history', authorize(['owner','technician','cashier']), async (req, res) => {
-  const tenantId = requireTenantId(req, res);
-  if (!tenantId) return;
-  const sessions = await CashSession.findAll({
-    where: { tenant_id: tenantId },
-    order: [['opened_at','DESC']],
-    limit: 50
-  });
-  res.json({ sessions });
+// GET /history
+router.get('/history', async (req, res) => {
+  try {
+    const tenant_id = req.user.tenant_id;
+    const sessions = await CashSession.findAll({ where: { tenant_id }, order: [['opened_at', 'DESC']], limit: 100 });
+    for (const s of sessions) {
+      const exps = await Expense.findAll({ where: { cash_session_id: s.id } });
+      s.dataValues.total_salidas = exps.reduce((a, b) => a + Number(b.amount), 0);
+    }
+    res.json({ sessions });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error historial' });
+  }
 });
 
-// GET Detalle de una caja con sus ventas
-router.get('/:id', authorize(['owner','technician','cashier']), async (req, res) => {
-  const tenantId = requireTenantId(req, res);
-  if (!tenantId) return;
-  const session = await CashSession.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
-  if (!session) return res.status(404).json({ error: 'Caja no encontrada' });
-  const sales = await Sale.findAll({ where: { tenant_id: tenantId, cash_session_id: session.id }, order: [['created_at','DESC']] });
-  res.json({ session, sales });
+// GET /expenses
+router.get('/expenses', async (req, res) => {
+  try {
+    const tenant_id = req.user.tenant_id;
+    const expenses = await Expense.findAll({ where: { tenant_id }, order: [['created_at', 'DESC']], limit: 200 });
+    res.json({ expenses });
+  } catch (err) {
+    res.status(500).json({ error: 'Error salidas' });
+  }
+});
+
+// POST /expenses
+router.post('/expenses', async (req, res) => {
+  try {
+    const tenant_id = req.user.tenant_id;
+    const user = req.user;
+    const { amount, reason, category } = req.body;
+    if (!amount || !reason) return res.status(400).json({ error: 'Monto y motivo requeridos' });
+
+    const current = await CashSession.findOne({ where: { tenant_id, status: 'open' } });
+
+    const exp = await Expense.create({
+      tenant_id,
+      cash_session_id: current ? current.id : null,
+      amount,
+      reason,
+      category: category || 'gasto_general',
+      user_id: user.id,
+      user_name: user.name,
+    });
+
+    res.json({ expense: exp });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al crear salida' });
+  }
+});
+
+// DELETE /expenses/:id
+router.delete('/expenses/:id', async (req, res) => {
+  try {
+    const tenant_id = req.user.tenant_id;
+    const exp = await Expense.findOne({ where: { id: req.params.id, tenant_id } });
+    if (!exp) return res.status(404).json({ error: 'No encontrado' });
+    await exp.destroy();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al eliminar' });
+  }
+});
+
+// POST /open
+router.post('/open', async (req, res) => {
+  try {
+    const tenant_id = req.user.tenant_id;
+    const user = req.user;
+    const existing = await CashSession.findOne({ where: { tenant_id, status: 'open' } });
+    if (existing) return res.status(400).json({ error: 'Ya hay una caja abierta' });
+
+    const count = await CashSession.count({ where: { tenant_id } });
+    const folio = `CAJA-${String(count + 1).padStart(4, '0')}`;
+
+    const session = await CashSession.create({
+      tenant_id,
+      folio,
+      opening_amount: req.body.opening_amount || 0,
+      user_open_id: user.id,
+      user_open_name: user.name,
+      status: 'open',
+      opened_at: new Date(),
+    });
+
+    res.json({ session });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al abrir caja' });
+  }
+});
+
+// POST /close
+router.post('/close', async (req, res) => {
+  try {
+    const tenant_id = req.user.tenant_id;
+    const user = req.user;
+    const session = await CashSession.findOne({ where: { tenant_id, status: 'open' } });
+    if (!session) return res.status(400).json({ error: 'No hay caja abierta' });
+
+    const sales = await Sale.findAll({ where: { cash_session_id: session.id } });
+    const expenses = await Expense.findAll({ where: { cash_session_id: session.id } });
+
+    const totalSales = sales.reduce((s, x) => s + Number(x.total), 0);
+    const totalEfectivo = sales.filter(x => x.payment_method === 'efectivo').reduce((s, x) => s + Number(x.total), 0);
+    const totalTarjeta = sales.filter(x => x.payment_method === 'tarjeta').reduce((s, x) => s + Number(x.total), 0);
+    const totalTrans = sales.filter(x => x.payment_method === 'transferencia').reduce((s, x) => s + Number(x.total), 0);
+    const totalCred = sales.filter(x => x.payment_method === 'credito').reduce((s, x) => s + Number(x.total), 0);
+    const totalSalidas = expenses.reduce((s, x) => s + Number(x.amount), 0);
+
+    const expected = Number(session.opening_amount) + totalEfectivo - totalSalidas;
+    const closing = req.body.closing_amount != null ? Number(req.body.closing_amount) : expected;
+    const diff = closing - expected;
+
+    await session.update({
+      closing_amount: closing,
+      expected_amount: expected,
+      difference: diff,
+      total_sales: totalSales,
+      total_efectivo: totalEfectivo,
+      total_tarjeta: totalTarjeta,
+      total_transferencia: totalTrans,
+      total_credito: totalCred,
+      total_salidas: totalSalidas,
+      sales_count: sales.length,
+      status: 'closed',
+      user_close_id: user.id,
+      user_close_name: user.name,
+      closed_at: new Date(),
+      notes: req.body.notes || null,
+    });
+
+    res.json({ session });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Error al cerrar caja' });
+  }
 });
 
 export default router;
