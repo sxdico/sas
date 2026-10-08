@@ -5,7 +5,7 @@ import { formatCurrency, formatDateTime } from '@/utils/permissions';
 import type { Product, Category, InventoryMovement } from '@/types';
 import {
   Package, Plus, Search, AlertTriangle, X, Edit2, Trash2,
-  RefreshCw, Tag,
+  RefreshCw, Tag, Palette,
 } from 'lucide-react';
 
 type Tab = 'products' | 'movements' | 'categories';
@@ -19,6 +19,8 @@ export default function Inventory() {
   const [search, setSearch] = useState('');
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<any>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -86,6 +88,11 @@ export default function Inventory() {
           {tab === 'products' && (
             <button onClick={() => { setEditingProduct(null); setShowProductModal(true); }} className="btn-primary">
               <Plus className="w-4 h-4" /> Nuevo producto
+            </button>
+          )}
+          {tab === 'categories' && (
+            <button onClick={() => { setEditingCategory(null); setShowCategoryModal(true); }} className="btn-primary">
+              <Plus className="w-4 h-4" /> Nueva categoría
             </button>
           )}
         </div>
@@ -208,19 +215,37 @@ export default function Inventory() {
             {categories.map((cat: any) => {
               const count = products.filter((p) => p.category_id === cat.id).length;
               return (
-                <div key={cat.id} className="card p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: cat.color + '20' }}>
-                      <Tag className="w-5 h-5" style={{ color: cat.color }} />
+                <div key={cat.id} className="card p-4 group hover:shadow-md transition">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: cat.color + '20' }}>
+                        <Tag className="w-5 h-5" style={{ color: cat.color }} />
+                      </div>
+                      <div>
+                        <p className="font-semibold">{cat.name}</p>
+                        <p className="text-xs text-ink-500">{count} producto(s)</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-semibold">{cat.name}</p>
-                      <p className="text-xs text-ink-500">{count} producto(s)</p>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                      <button onClick={() => { setEditingCategory(cat); setShowCategoryModal(true); }} className="p-1.5 rounded hover:bg-ink-100"><Edit2 className="w-4 h-4" /></button>
+                      <button onClick={async () => {
+                        if (count > 0) { alert('No puedes eliminar una categoría con productos'); return; }
+                        if (!confirm(`¿Eliminar categoría "${cat.name}"?`)) return;
+                        try { await api.delete(`/products/categories/${cat.id}`); setCategories(prev => prev.filter(x => x.id !== cat.id)); }
+                        catch (e: any) { alert(e.response?.data?.error || 'Error eliminando categoría'); }
+                      }} className="p-1.5 rounded hover:bg-error-50 hover:text-error-600"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </div>
                 </div>
               );
             })}
+            {categories.length === 0 && (
+              <div className="col-span-full card p-10 text-center">
+                <Tag className="w-12 h-12 mx-auto mb-3 text-ink-300" />
+                <p className="text-ink-500 mb-4">No hay categorías aún</p>
+                <button onClick={() => setShowCategoryModal(true)} className="btn-primary mx-auto"><Plus className="w-4 h-4" /> Crear primera categoría</button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -230,6 +255,7 @@ export default function Inventory() {
           product={editingProduct}
           categories={categories}
           onClose={() => setShowProductModal(false)}
+          onOpenCategoryModal={() => { setEditingCategory(null); setShowCategoryModal(true); }}
           onSave={async (data: any) => {
             try {
               if (editingProduct) {
@@ -260,11 +286,96 @@ export default function Inventory() {
           }}
         />
       )}
+
+      {showCategoryModal && (
+        <CategoryModal
+          category={editingCategory}
+          onClose={() => setShowCategoryModal(false)}
+          onSave={async (data: any) => {
+            try {
+              if (editingCategory) {
+                const res = await api.put(`/products/categories/${editingCategory.id}`, data);
+                const updated = res.data.category || res.data;
+                setCategories(prev => prev.map(c => c.id === editingCategory.id ? {...c, ...updated} : c));
+              } else {
+                const res = await api.post('/products/categories', data);
+                const created = res.data.category || res.data;
+                setCategories(prev => [...prev, created]);
+              }
+              setShowCategoryModal(false);
+            } catch (e: any) {
+              // Fallback si tu ruta es /categories
+              try {
+                if (editingCategory) {
+                  const res2 = await api.put(`/categories/${editingCategory.id}`, data);
+                  const updated = res2.data.category || res2.data;
+                  setCategories(prev => prev.map(c => c.id === editingCategory.id ? {...c, ...updated} : c));
+                } else {
+                  const res2 = await api.post('/categories', data);
+                  const created = res2.data.category || res2.data;
+                  setCategories(prev => [...prev, created]);
+                }
+                setShowCategoryModal(false);
+              } catch (e2: any) {
+                alert(e2.response?.data?.error || e.response?.data?.error || 'Error guardando categoría. Revisa ruta en backend');
+              }
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function ProductModal({ product, categories, onClose, onSave }: any) {
+function CategoryModal({ category, onClose, onSave }: any) {
+  const [form, setForm] = useState({
+    name: category?.name ?? '',
+    color: category?.color ?? '#3B82F6',
+  });
+
+  const presetColors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316', '#6366F1', '#14B8A6'];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="card w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-bold flex items-center gap-2"><Tag className="w-5 h-5" /> {category ? 'Editar categoría' : 'Nueva categoría'}</h2>
+          <button onClick={onClose}><X className="w-5 h-5" /></button>
+        </div>
+        <div className="space-y-4">
+          <div>
+            <label className="label">Nombre de categoría</label>
+            <input className="input" placeholder="Ej: Pantallas, Baterías, Accesorios..." value={form.name} onChange={(e) => setForm({...form, name: e.target.value })} autoFocus />
+          </div>
+          <div>
+            <label className="label flex items-center gap-2"><Palette className="w-4 h-4" /> Color</label>
+            <div className="flex items-center gap-2 mb-3">
+              <input type="color" className="w-12 h-10 rounded-lg border cursor-pointer" value={form.color} onChange={(e) => setForm({...form, color: e.target.value })} />
+              <input className="input flex-1 font-mono" value={form.color} onChange={(e) => setForm({...form, color: e.target.value })} />
+            </div>
+            <div className="grid grid-cols-5 gap-2">
+              {presetColors.map(c => (
+                <button key={c} onClick={() => setForm({...form, color: c})} className={`w-full h-9 rounded-lg border-2 transition ${form.color === c ? 'border-ink-900 scale-110' : 'border-transparent'}`} style={{ backgroundColor: c }} />
+              ))}
+            </div>
+          </div>
+          <div className="bg-ink-50 rounded-xl p-3 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: form.color + '20' }}>
+              <Tag className="w-5 h-5" style={{ color: form.color }} />
+            </div>
+            <div><p className="text-sm font-semibold">{form.name || 'Vista previa'}</p><p className="text-xs text-ink-500" style={{ color: form.color }}>{form.color}</p></div>
+          </div>
+        </div>
+        <div className="flex gap-3 mt-6">
+          <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
+          <button onClick={() => onSave(form)} disabled={!form.name.trim()} className="btn-primary flex-1 disabled:opacity-50">{category ? 'Actualizar' : 'Crear categoría'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductModal({ product, categories, onClose, onSave, onOpenCategoryModal }: any) {
   const isEditing =!!product;
   const [form, setForm] = useState({
     sku: product?.sku?? '',
@@ -283,7 +394,7 @@ function ProductModal({ product, categories, onClose, onSave }: any) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="card w-full max-w-lg p-6 max-h- overflow-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="card w-full max-w-lg p-6 max-h-[90vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-xl font-bold">{product? 'Editar producto' : 'Nuevo producto'}</h2>
           <button onClick={onClose}><X className="w-5 h-5" /></button>
@@ -296,7 +407,7 @@ function ProductModal({ product, categories, onClose, onSave }: any) {
           <div><label className="label">Nombre</label><input className="input" value={form.name} onChange={(e) => setForm({...form, name: e.target.value })} /></div>
           <div><label className="label">Descripción</label><textarea className="input" value={form.description} onChange={(e) => setForm({...form, description: e.target.value })} /></div>
           <div>
-            <label className="label">Categoría</label>
+            <div className="flex items-center justify-between mb-1"><label className="label mb-0">Categoría</label><button onClick={onOpenCategoryModal} className="text-xs text-primary-600 font-bold hover:underline">+ Nueva categoría</button></div>
             <select className="input" value={form.category_id} onChange={(e) => setForm({...form, category_id: e.target.value })}>
               <option value="">Sin categoría</option>
               {categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
