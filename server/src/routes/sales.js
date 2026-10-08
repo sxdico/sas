@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { Sale, SaleItem, Product } from '../models.js';
+import { Sale, SaleItem, Product, CashSession } from '../models.js';
 import { sequelize } from '../models.js';
 import { authMiddleware, authorize, requireTenantId } from '../middleware/auth.js';
 
@@ -15,6 +15,9 @@ router.post('/', authorize(['owner','technician','cashier']), async (req, res) =
 
   const t = await sequelize.transaction();
   try {
+    // Buscar caja abierta
+    const openCash = await CashSession.findOne({ where: { tenant_id: tenantId, status: 'open' }, transaction: t });
+
     const count = await Sale.count({ where: { tenant_id: tenantId }, transaction: t });
     const folio = `V-${String(count + 1).padStart(3, '0')}`;
 
@@ -25,6 +28,7 @@ router.post('/', authorize(['owner','technician','cashier']), async (req, res) =
     const sale = await Sale.create({
       id: uuidv4(),
       tenant_id: tenantId,
+      cash_session_id: openCash ? openCash.id : null,
       folio,
       subtotal,
       discount: totalDisc,
@@ -39,11 +43,10 @@ router.post('/', authorize(['owner','technician','cashier']), async (req, res) =
     }, { transaction: t });
 
     for (const it of items) {
-      const isAnticipo = !it.product_id || String(it.product_id).startsWith('ANTICIPO') || it.name.toLowerCase().includes('anticipo orden');
+      const isAnticipo = !it.product_id || String(it.product_id).startsWith('ANTICIPO') || it.name.toLowerCase().includes('anticipo orden') || it.name.toLowerCase().includes('liquidación orden');
 
       let productIdToSave = it.product_id || null;
 
-      // Si es producto normal, descuenta stock
       if (!isAnticipo && it.product_id) {
         const prod = await Product.findOne({ where: { id: it.product_id, tenant_id: tenantId }, transaction: t });
         if (!prod) throw new Error(`Producto ${it.name} no encontrado`);
@@ -52,7 +55,6 @@ router.post('/', authorize(['owner','technician','cashier']), async (req, res) =
         await prod.save({ transaction: t });
         productIdToSave = prod.id;
       } else {
-        // Para anticipo, busca o usa el producto fantasma ANTICIPO sin descontar stock infinito
         let anticipoProd = await Product.findOne({ where: { tenant_id: tenantId, sku: 'ANTICIPO' }, transaction: t });
         if (!anticipoProd) {
           anticipoProd = await Product.create({
@@ -74,7 +76,7 @@ router.post('/', authorize(['owner','technician','cashier']), async (req, res) =
         tenant_id: tenantId,
         sale_id: sale.id,
         product_id: productIdToSave,
-        name: it.name, // Aquí se guarda "Anticipo Orden RP-003 - test"
+        name: it.name,
         price: it.price,
         quantity: it.quantity,
         discount: it.discount || 0,

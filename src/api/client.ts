@@ -94,6 +94,14 @@ export const orderAPI = {
   api.delete(`/orders/${orderId}/parts/${partId}`),
 };
 
+export const cashAPI = {
+  current: () => api.get('/cash/current'),
+  open: (opening_amount: number) => api.post('/cash/open', { opening_amount }),
+  close: (data: { closing_amount: number; notes?: string }) => api.post('/cash/close', data),
+  history: () => api.get('/cash/history'),
+  get: (id: string) => api.get(`/cash/${id}`),
+};
+
 // ===== Sales API =====
 export const saleAPI = {
   list: () => api.get('/sales'),

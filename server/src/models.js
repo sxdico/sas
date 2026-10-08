@@ -164,9 +164,35 @@ export const Sale = sequelize.define('Sale', {
   status: { type: DataTypes.ENUM('completed', 'on_hold', 'credit'), defaultValue: 'completed' },
 }, { tableName: 'sales', createdAt: 'created_at', updatedAt: false });
 
+// ===== CASH SESSIONS MODEL =====
+export const CashSession = sequelize.define('CashSession', {
+  id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
+  tenant_id: { type: DataTypes.UUID, allowNull: false },
+  folio: { type: DataTypes.STRING(20), allowNull: false },
+  opening_amount: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
+  closing_amount: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
+  expected_amount: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
+  difference: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
+  total_sales: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
+  total_efectivo: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
+  total_tarjeta: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
+  total_transferencia: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
+  total_credito: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
+  sales_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+  status: { type: DataTypes.ENUM('open', 'closed'), defaultValue: 'open' },
+  user_open_id: { type: DataTypes.UUID },
+  user_open_name: { type: DataTypes.STRING(150) },
+  user_close_id: { type: DataTypes.UUID, allowNull: true },
+  user_close_name: { type: DataTypes.STRING(150), allowNull: true },
+  opened_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
+  closed_at: { type: DataTypes.DATE, allowNull: true },
+  notes: { type: DataTypes.TEXT, allowNull: true },
+}, { tableName: 'cash_sessions', createdAt: 'created_at', updatedAt: 'updated_at' });
+
 // ===== SALE ITEMS =====
 export const SaleItem = sequelize.define('SaleItem', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
+  cash_session_id: { type: DataTypes.UUID, allowNull: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
   sale_id: { type: DataTypes.UUID, allowNull: false },
   product_id: { type: DataTypes.UUID },
@@ -221,6 +247,11 @@ SaleItem.belongsTo(Product, { foreignKey: 'product_id' });
 
 Tenant.hasMany(Notification, { foreignKey: 'tenant_id' });
 Notification.belongsTo(Tenant, { foreignKey: 'tenant_id' });
+
+Tenant.hasMany(CashSession, { foreignKey: 'tenant_id' });
+CashSession.belongsTo(Tenant, { foreignKey: 'tenant_id' });
+CashSession.hasMany(Sale, { foreignKey: 'cash_session_id' });
+Sale.belongsTo(CashSession, { foreignKey: 'cash_session_id' });
 
 export { sequelize };
 export default sequelize;
