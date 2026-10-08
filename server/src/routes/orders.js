@@ -58,6 +58,9 @@ router.post('/', authorize(['owner', 'technician']), async (req, res) => {
   } catch (err) {
     await t.rollback();
     console.error('ERROR CREANDO ORDEN:', err);
+
+console.error(err.stack);
+console.error('BODY QUE LLEGÓ:', req.body);
     res.status(500).json({ error: 'Error al crear orden', detail: err.message });
   }
 });
