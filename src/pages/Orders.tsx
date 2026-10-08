@@ -4,7 +4,7 @@ import { ORDER_STATUS_CONFIG, formatCurrency, formatDateTime } from '@/utils/per
 import type { RepairOrder, OrderStatus, Product } from '@/types';
 import {
   Plus, X, Phone, Wrench, Clock, Package, FileText,
-  Check, DollarSign, Shield, Lock, Banknote, Calendar, Trash2, Wallet, ChevronRight
+  Check, DollarSign, Shield, Lock, Calendar, Trash2, Wallet, ChevronRight
 } from 'lucide-react';
 
 const COLUMN_ORDER: OrderStatus[] = ['por_revisar', 'en_reparacion', 'esperando_refaccion', 'listo', 'entregado'];
@@ -115,6 +115,25 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
     goToPOS();
   };
 
+  // NUEVO: QUITAR REFACCION
+  const handleRemovePart = async (orderId: string, partId: string) => {
+    const partToRemove = (selectedOrder as any)?.OrderParts?.find((p: any) => p.id === partId) || (selectedOrder as any)?.parts_used?.find((p: any) => p.id === partId);
+    if (!partToRemove) return;
+    if (!confirm(`¿Quitar ${partToRemove.product_name} x${partToRemove.quantity}? Se regresará ${partToRemove.quantity}pz al inventario y se descontará del total.`)) return;
+    try {
+      const res = await orderAPI.removePart(orderId, partId);
+      const updatedOrder = res.data.order;
+      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, cost_parts: updatedOrder.cost_parts, total: updatedOrder.total, OrderParts: (o as any).OrderParts?.filter((x: any) => x.id !== partId) } as any : o));
+      setSelectedOrder(prev => {
+        if (!prev) return null;
+        return { ...prev, cost_parts: updatedOrder.cost_parts, total: updatedOrder.total, OrderParts: (prev as any).OrderParts?.filter((x: any) => x.id !== partId), parts_used: (prev as any).parts_used?.filter((x: any) => x.id !== partId) } as any;
+      });
+      setApiProducts(prev => prev.map(prod => prod.id === partToRemove.product_id ? { ...prod, stock: prod.stock + partToRemove.quantity } as any : prod));
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Error quitando refacción');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -160,8 +179,10 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
               const newPart = res.data.part; const updatedOrder = res.data.order;
               setOrders((prev) => prev.map((o) => o.id === selectedOrder.id? {...o, parts_used: [...(o.parts_used || []), newPart], cost_parts: updatedOrder.cost_parts, total: updatedOrder.total } as any : o));
               setSelectedOrder((prev) => prev? {...prev, parts_used: [...(prev.parts_used || []), newPart], cost_parts: updatedOrder.cost_parts, total: updatedOrder.total, OrderParts: [...(prev as any).OrderParts || [], newPart] } as any : null);
+              setApiProducts(prev => prev.map(p => p.id === productId ? { ...p, stock: Math.max(0, (p as any).stock - qty) } as any : p));
             } catch (err: any) { alert(err.response?.data?.error || 'Error agregando refacción'); }
           }}
+          onRemovePart={handleRemovePart}
           onStatusChange={async (newStatus: OrderStatus) => {
             try {
               await orderAPI.updateStatus(selectedOrder.id, newStatus);
@@ -207,11 +228,10 @@ function OrderCard({ order, dragging, onDragStart, onDragEnd, onClick }: any) {
   );
 }
 
-function OrderDetailModal({ order, onClose, products, onAddPart, onDelete, onPagarResto, onStatusChange }: any) {
+function OrderDetailModal({ order, onClose, products, onAddPart, onRemovePart, onDelete, onPagarResto, onStatusChange }: any) {
   const [activeTab, setActiveTab] = useState<'info' | 'diagnostic' | 'parts' | 'warranty'>('info');
   const [showPartPicker, setShowPartPicker] = useState(false);
   const [partQty, setPartQty] = useState(1);
-  const statusOptions: OrderStatus[] = ['por_revisar', 'en_reparacion', 'esperando_refaccion', 'listo', 'entregado'];
   const warrantyInfo = getWarrantyInfo(order);
   const { total, anticipo, resto, pagado } = getPagoInfo(order);
   const saldo = resto;
@@ -296,9 +316,21 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onDelete, onPag
                 {(order.parts_used?.length > 0 || order.OrderParts?.length > 0) ? (
                   <div className="space-y-2">
                     {(order.OrderParts || order.parts_used).map((part: any, i: number) => (
-                      <div key={part.id || i} className="flex items-center justify-between bg-ink-50 rounded-lg px-3 py-2.5">
-                        <div><p className="text-sm font-medium">{part.product_name}</p><p className="text-xs text-ink-500">{part.quantity} × {formatCurrency(part.unit_cost)}</p></div>
-                        <span className="text-sm font-bold">{formatCurrency(part.unit_cost * part.quantity)}</span>
+                      <div key={part.id || i} className="flex items-center justify-between bg-ink-50 rounded-lg px-3 py-2.5 border">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{part.product_name}</p>
+                          <p className="text-xs text-ink-500">{part.quantity} × {formatCurrency(part.unit_cost)} = {formatCurrency(part.unit_cost * part.quantity)}</p>
+                        </div>
+                        <div className="flex items-center gap-2 ml-3">
+                          <span className="text-sm font-bold">{formatCurrency(part.unit_cost * part.quantity)}</span>
+                          <button
+                            onClick={() => onRemovePart(order.id, part.id)}
+                            className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 border border-red-200"
+                            title="Quitar refacción y regresar al inventario"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

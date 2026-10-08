@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { RepairOrder, OrderPart, Product, Sale, SaleItem } from '../models.js';
+import { RepairOrder, OrderPart, Product, Sale, SaleItem, InventoryMovement } from '../models.js';
 import { sequelize } from '../models.js';
 import { authMiddleware, authorize, requireTenantId } from '../middleware/auth.js';
 
@@ -60,73 +60,43 @@ router.put('/:id', authorize(['owner', 'technician']), async (req, res) => {
   res.json({ order });
 });
 
-// LIQUIDAR RESTO - COBRA EL RESTO Y MARCA COMO PAGADO + CREA VENTA PARA CORTE
 router.post('/:id/liquidate', authorize(['owner','technician','cashier']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const { payment_method } = req.body;
   const order = await RepairOrder.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
   if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
-
   const total = parseFloat(order.total || 0);
   const advance = parseFloat(order.advance_payment || 0);
   const resto = total - advance;
-
   if (resto <= 0) return res.status(400).json({ error: 'Esta orden ya está pagada' });
-
   const t = await sequelize.transaction();
   try {
-    // Crear venta para el corte de caja
     const count = await Sale.count({ where: { tenant_id: tenantId }, transaction: t });
     const folio = `V-${String(count + 1).padStart(3, '0')}`;
-
     const sale = await Sale.create({
-      id: uuidv4(),
-      tenant_id: tenantId,
-      folio,
-      subtotal: resto,
-      discount: 0,
-      total: resto,
+      id: uuidv4(), tenant_id: tenantId, folio,
+      subtotal: resto, discount: 0, total: resto,
       payment_method: payment_method || 'efectivo',
-      cash_received: resto,
-      change: 0,
-      customer_id: null,
-      customer_name: order.customer_name,
-      user_id: req.user.id,
-      user_name: req.user.name,
+      cash_received: resto, change: 0,
+      user_id: req.user.id, user_name: req.user.name,
       status: 'completed'
     }, { transaction: t });
-
-    // Producto anticipo/liquidacion para no afectar stock real
     let anticipoProd = await Product.findOne({ where: { tenant_id: tenantId, sku: 'ANTICIPO' }, transaction: t });
     if (!anticipoProd) {
       anticipoProd = await Product.create({
-        id: uuidv4(),
-        tenant_id: tenantId,
-        sku: 'ANTICIPO',
-        name: 'Anticipo Orden Reparacion',
-        sale_price: resto,
-        cost_price: 0,
-        stock: 999999,
-        min_stock: 0,
+        id: uuidv4(), tenant_id: tenantId, sku: 'ANTICIPO',
+        name: 'Anticipo Orden Reparacion', sale_price: resto, cost_price: 0, stock: 999999, min_stock: 0,
       }, { transaction: t });
     }
-
     await SaleItem.create({
-      id: uuidv4(),
-      tenant_id: tenantId,
-      sale_id: sale.id,
+      id: uuidv4(), tenant_id: tenantId, sale_id: sale.id,
       product_id: anticipoProd.id,
       name: `Liquidación Orden ${order.folio} - ${order.customer_name}`,
-      price: resto,
-      quantity: 1,
-      discount: 0,
+      price: resto, quantity: 1, discount: 0,
     }, { transaction: t });
-
-    // Actualizar orden como pagada
     order.advance_payment = total;
     await order.save({ transaction: t });
-
     await t.commit();
     res.json({ order, sale });
   } catch (err) {
@@ -136,7 +106,6 @@ router.post('/:id/liquidate', authorize(['owner','technician','cashier']), async
   }
 });
 
-// ENDPOINT PARA LIQUIDAR VIA POS (solo actualiza la orden después de cobrar en POS)
 router.put('/:id/mark-paid', authorize(['owner','technician','cashier']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
@@ -181,6 +150,12 @@ router.post('/:id/parts', authorize(['owner', 'technician']), async (req, res) =
   const t = await sequelize.transaction();
   try {
     product.stock -= quantity; await product.save({ transaction: t });
+    // Registrar movimiento inventario
+    await InventoryMovement.create({
+      id: uuidv4(), tenant_id: tenantId, product_id: product.id,
+      type: 'out', quantity, reason: `Uso en orden ${order.folio}`,
+      user_id: req.user.id, user_name: req.user.name,
+    }, { transaction: t });
     const part = await OrderPart.create({ id: uuidv4(), tenant_id: tenantId, order_id: order.id, product_id, product_name: product.name, quantity, unit_cost: product.cost_price }, { transaction: t });
     order.cost_parts = parseFloat(order.cost_parts) + (product.cost_price * quantity);
     order.total = parseFloat(order.total || 0) + (product.cost_price * quantity);
@@ -188,6 +163,42 @@ router.post('/:id/parts', authorize(['owner', 'technician']), async (req, res) =
     await t.commit();
     res.status(201).json({ part, order });
   } catch (err) { await t.rollback(); res.status(500).json({ error: err.message }); }
+});
+
+// NUEVO: QUITAR REFACCION Y REGRESAR STOCK
+router.delete('/:id/parts/:partId', authorize(['owner', 'technician']), async (req, res) => {
+  const tenantId = requireTenantId(req, res);
+  if (!tenantId) return;
+  const { id, partId } = req.params;
+  const order = await RepairOrder.findOne({ where: { id, tenant_id: tenantId } });
+  if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
+  const part = await OrderPart.findOne({ where: { id: partId, order_id: id, tenant_id: tenantId } });
+  if (!part) return res.status(404).json({ error: 'Refacción no encontrada en esta orden' });
+
+  const t = await sequelize.transaction();
+  try {
+    const product = await Product.findOne({ where: { id: part.product_id, tenant_id: tenantId }, transaction: t });
+    if (product) {
+      product.stock += part.quantity;
+      await product.save({ transaction: t });
+      await InventoryMovement.create({
+        id: uuidv4(), tenant_id: tenantId, product_id: product.id,
+        type: 'in', quantity: part.quantity, reason: `Devolución de orden ${order.folio} - corrección`,
+        user_id: req.user.id, user_name: req.user.name,
+      }, { transaction: t });
+    }
+    const costToRemove = parseFloat(part.unit_cost) * parseInt(part.quantity);
+    order.cost_parts = Math.max(0, parseFloat(order.cost_parts) - costToRemove);
+    order.total = Math.max(0, parseFloat(order.total) - costToRemove);
+    await order.save({ transaction: t });
+    await part.destroy({ transaction: t });
+    await t.commit();
+    res.json({ message: 'Refacción eliminada', order });
+  } catch (err) {
+    await t.rollback();
+    console.error('ERROR QUITANDO REFACCION:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.delete('/:id', authorize(['owner']), async (req, res) => {
