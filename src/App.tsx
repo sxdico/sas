@@ -71,7 +71,7 @@ function AppContent() {
     switch (currentPage) {
       case 'dashboard': return <Dashboard />;
       case 'pos': return <POS onSaleComplete={handleSaleComplete} />;
-      case 'orders': return <Orders onStatusChange={handleOrderStatusChange} />;
+      case 'orders': return <Orders onStatusChange={handleOrderStatusChange} onNavigate={handleNavigate} />;
       case 'deliveries': return <Deliveries onDeliver={handleDeliver} />;
       case 'inventory': return <Inventory />;
       case 'tenants': return <Tenants />;
