@@ -1,6 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { orderAPI, productAPI, saleAPI } from '@/api/client'
+import { orderAPI, productAPI } from '@/api/client'
 import { ORDER_STATUS_CONFIG, formatCurrency, formatDateTime } from '@/utils/permissions';
 import type { RepairOrder, OrderStatus, Product } from '@/types';
 import {
@@ -29,7 +28,12 @@ function getPagoInfo(order: RepairOrder) {
   return { total, anticipo, resto, pagado };
 }
 
-export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: string, status: OrderStatus) => void }) {
+interface OrdersProps {
+  onStatusChange?: (orderId: string, status: OrderStatus) => void;
+  onNavigate?: (page: string) => void;
+}
+
+export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
   const [orders, setOrders] = useState<RepairOrder[]>([]);
   const [apiProducts, setApiProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +41,20 @@ export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: 
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<OrderStatus | null>(null);
-  const navigate = useNavigate();
+
+  const goToPOS = () => {
+    if (onNavigate) {
+      onNavigate('pos');
+    } else {
+      // fallback para tu sistema de currentPage
+      window.dispatchEvent(new CustomEvent('fixpro-navigate', { detail: 'pos' }));
+      // ultimo fallback
+      setTimeout(() => {
+        const btn = document.querySelector('[data-nav="pos"]') as HTMLButtonElement;
+        btn?.click();
+      }, 100);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -90,7 +107,7 @@ export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: 
           type: 'anticipo'
         };
         localStorage.setItem('pendingAnticipo', JSON.stringify(pending));
-        navigate('/pos');
+        goToPOS();
       }
     } catch (err: any) {
       alert(err.response?.data?.error || 'Error creando orden');
@@ -135,7 +152,7 @@ export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: 
     };
     localStorage.setItem('pendingAnticipo', JSON.stringify(pending));
     setSelectedOrder(null);
-    navigate('/pos');
+    goToPOS();
   };
 
   if (loading) {
@@ -277,7 +294,6 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onDelete, onLiq
                           <Banknote className="w-4 h-4" /> Cobrar en POS
                         </button>
                       </div>
-                      <p className="text-xs text-ink-400 text-center">Liquidar directo registra en corte. POS te lleva a caja.</p>
                     </div>
                   </>
                 )}
@@ -295,7 +311,6 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onDelete, onLiq
           )}
         </div>
         
-        {/* FOOTER CON ELIMINAR */}
         <div className="p-4 border-t bg-white flex gap-2">
           <button onClick={() => onDelete(order.id)} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-50 text-red-600 border border-red-200 font-semibold hover:bg-red-100">
             <Trash2 className="w-4 h-4" /> Eliminar
