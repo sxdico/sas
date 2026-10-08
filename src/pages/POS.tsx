@@ -54,8 +54,8 @@ export default function POS({ onSaleComplete }: POSProps) {
       const res = await cashAPI.current();
       setCashSession(res.data.session);
       setCashSummary(res.data.summary || null);
-      if (res.data.summary) {
-        const expected = parseFloat(res.data.session.opening_amount) + parseFloat(res.data.summary.efectivo || 0);
+      if (res.data.session && res.data.summary) {
+        const expected = parseFloat(res.data.session.opening_amount) + parseFloat(res.data.summary.efectivo || 0) - parseFloat(res.data.summary.total_salidas || 0);
         setClosingAmount(String(expected));
       }
     } catch (e) {
@@ -173,7 +173,7 @@ export default function POS({ onSaleComplete }: POSProps) {
       setShowCloseCash(false);
       setCashSession(null);
       setCashSummary(null);
-      alert(`Caja cerrada. Diferencia: ${formatCurrency(res.data.summary.difference)}`);
+      alert(`Caja cerrada. Diferencia: ${formatCurrency(res.data.session?.difference || res.data.summary?.difference || 0)}`);
     } catch (e: any) { alert(e.response?.data?.error || 'Error cerrando caja'); }
   };
 
@@ -231,6 +231,14 @@ export default function POS({ onSaleComplete }: POSProps) {
 
   const isAnticipoInCart = cart.some(i => i.name.toLowerCase().includes('anticipo') || i.name.toLowerCase().includes('liquidación'));
 
+  // CALCULO CORREGIDO CON SALIDAS
+  const expectedInCash = useMemo(() => {
+    if (!cashSession) return 0;
+    return parseFloat(cashSession.opening_amount) + parseFloat(cashSummary?.efectivo || 0) - parseFloat(cashSummary?.total_salidas || 0);
+  }, [cashSession, cashSummary]);
+
+  const diff = closingAmount ? parseFloat(closingAmount) - expectedInCash : 0;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full py-20">
@@ -242,7 +250,7 @@ export default function POS({ onSaleComplete }: POSProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* BARRA DE CAJA - DENTRO DE POS */}
+      {/* BARRA DE CAJA - DENTRO DE POS - CON SALIDAS */}
       <div className={`px-4 py-2.5 flex items-center justify-between border-b-2 ${cashSession ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
         {cashSession ? (
           <>
@@ -251,7 +259,8 @@ export default function POS({ onSaleComplete }: POSProps) {
               <span className="text-xs bg-white px-2 py-1 rounded border">Inicial: {formatCurrency(cashSession.opening_amount)}</span>
               <span className="text-xs bg-white px-2 py-1 rounded border">Ventas: {formatCurrency(cashSummary?.total || 0)} ({cashSummary?.count || 0})</span>
               <span className="text-xs bg-green-600 text-white px-2 py-1 rounded font-bold">Efectivo: {formatCurrency(cashSummary?.efectivo || 0)}</span>
-              <span className="text-xs hidden md:inline">Esperado: {formatCurrency(parseFloat(cashSession.opening_amount) + parseFloat(cashSummary?.efectivo || 0))}</span>
+              {(cashSummary?.total_salidas || 0) > 0 && <span className="text-xs bg-red-600 text-white px-2 py-1 rounded font-bold">Salidas: -{formatCurrency(cashSummary?.total_salidas || 0)}</span>}
+              <span className="text-xs hidden md:inline font-bold">Esperado: {formatCurrency(expectedInCash)}</span>
             </div>
             <button onClick={() => setShowCloseCash(true)} className="btn-primary bg-orange-600 hover:bg-orange-700 py-1.5 text-sm"><DollarSign className="w-4 h-4" /> Corte de caja</button>
           </>
@@ -372,13 +381,14 @@ export default function POS({ onSaleComplete }: POSProps) {
               <div className="flex justify-between text-green-700 font-bold"><span>Efectivo:</span><span>{formatCurrency(cashSummary?.efectivo || 0)}</span></div>
               <div className="flex justify-between"><span>Tarjeta:</span><span>{formatCurrency(cashSummary?.tarjeta || 0)}</span></div>
               <div className="flex justify-between"><span>Transferencia:</span><span>{formatCurrency(cashSummary?.transferencia || 0)}</span></div>
-              <div className="border-t pt-2 mt-2 flex justify-between text-base font-bold"><span>Esperado en caja:</span><span>{formatCurrency(parseFloat(cashSession.opening_amount) + parseFloat(cashSummary?.efectivo || 0))}</span></div>
+              <div className="flex justify-between text-red-600 font-bold border-t pt-2"><span>- Salidas:</span><span>- {formatCurrency(cashSummary?.total_salidas || 0)} ({cashSummary?.salidas_count || 0})</span></div>
+              <div className="border-t pt-2 mt-2 flex justify-between text-base font-bold"><span>Esperado en caja:</span><span>{formatCurrency(expectedInCash)}</span></div>
             </div>
             <label className="label font-bold">¿Cuánto hay realmente en caja? $</label>
             <input type="number" className="input text-2xl font-bold mb-2" value={closingAmount} onChange={e => setClosingAmount(e.target.value)} autoFocus />
             {closingAmount && (
-              <div className={`rounded-lg p-3 mb-4 text-center font-bold ${parseFloat(closingAmount) - (parseFloat(cashSession.opening_amount) + parseFloat(cashSummary?.efectivo || 0)) === 0 ? 'bg-green-100 text-green-700' : parseFloat(closingAmount) - (parseFloat(cashSession.opening_amount) + parseFloat(cashSummary?.efectivo || 0)) > 0 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
-                Diferencia: {formatCurrency(parseFloat(closingAmount) - (parseFloat(cashSession.opening_amount) + parseFloat(cashSummary?.efectivo || 0)))} {parseFloat(closingAmount) - (parseFloat(cashSession.opening_amount) + parseFloat(cashSummary?.efectivo || 0)) > 0 ? '(Sobra)' : parseFloat(closingAmount) - (parseFloat(cashSession.opening_amount) + parseFloat(cashSummary?.efectivo || 0)) < 0 ? '(Falta)' : '(Cuadrado ✅)'}
+              <div className={`rounded-lg p-3 mb-4 text-center font-bold ${diff === 0 ? 'bg-green-100 text-green-700' : diff > 0 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
+                Diferencia: {formatCurrency(diff)} {diff > 0 ? '(Sobra)' : diff < 0 ? '(Falta)' : '(Cuadrado ✅)'}
               </div>
             )}
             <label className="label">Notas (opcional)</label>
