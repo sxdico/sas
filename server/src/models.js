@@ -119,8 +119,6 @@ export const RepairOrder = sequelize.define('RepairOrder', {
   technician_name: { type: DataTypes.STRING(150) },
   ready_at: { type: DataTypes.DATE, allowNull: true },
   delivered_at: { type: DataTypes.DATE, allowNull: true },
-
-  // ===== NUEVOS CAMPOS GARANTÍA Y BLOQUEO =====
   advance_payment: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
   lock_type: { 
     type: DataTypes.ENUM('Sin bloqueo','Patrón','PIN','Contraseña','Cuenta Google','iCloud','MDM','Otro'),
@@ -132,7 +130,6 @@ export const RepairOrder = sequelize.define('RepairOrder', {
     defaultValue: 'Días'
   },
   warranty_ends_at: { type: DataTypes.DATE, allowNull: true },
-
 }, { tableName: 'repair_orders', updatedAt: 'updated_at', createdAt: 'created_at' });
 
 // ===== ORDER PARTS =====
@@ -146,10 +143,11 @@ export const OrderPart = sequelize.define('OrderPart', {
   unit_cost: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
 }, { tableName: 'order_parts', createdAt: 'created_at', updatedAt: false });
 
-// ===== SALES =====
+// ===== SALES - FIX: cash_session_id va AQUÍ, no en SaleItem =====
 export const Sale = sequelize.define('Sale', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
+  cash_session_id: { type: DataTypes.STRING(36), allowNull: true },
   folio: { type: DataTypes.STRING(20), allowNull: false },
   subtotal: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
   discount: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
@@ -164,10 +162,10 @@ export const Sale = sequelize.define('Sale', {
   status: { type: DataTypes.ENUM('completed', 'on_hold', 'credit'), defaultValue: 'completed' },
 }, { tableName: 'sales', createdAt: 'created_at', updatedAt: false });
 
-// ===== CASH SESSIONS MODEL =====
+// ===== CASH SESSIONS - FIX con STRING(36) y sin FK conflictiva =====
 export const CashSession = sequelize.define('CashSession', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
-  tenant_id: { type: DataTypes.UUID, allowNull: false },
+  tenant_id: { type: DataTypes.STRING(36), allowNull: false },
   folio: { type: DataTypes.STRING(20), allowNull: false },
   opening_amount: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
   closing_amount: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
@@ -180,19 +178,18 @@ export const CashSession = sequelize.define('CashSession', {
   total_credito: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
   sales_count: { type: DataTypes.INTEGER, defaultValue: 0 },
   status: { type: DataTypes.ENUM('open', 'closed'), defaultValue: 'open' },
-  user_open_id: { type: DataTypes.UUID },
+  user_open_id: { type: DataTypes.STRING(36) },
   user_open_name: { type: DataTypes.STRING(150) },
-  user_close_id: { type: DataTypes.UUID, allowNull: true },
+  user_close_id: { type: DataTypes.STRING(36), allowNull: true },
   user_close_name: { type: DataTypes.STRING(150), allowNull: true },
   opened_at: { type: DataTypes.DATE, defaultValue: DataTypes.NOW },
   closed_at: { type: DataTypes.DATE, allowNull: true },
   notes: { type: DataTypes.TEXT, allowNull: true },
 }, { tableName: 'cash_sessions', createdAt: 'created_at', updatedAt: 'updated_at' });
 
-// ===== SALE ITEMS =====
+// ===== SALE ITEMS - LIMPIO sin cash_session_id =====
 export const SaleItem = sequelize.define('SaleItem', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
-  cash_session_id: { type: DataTypes.UUID, allowNull: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
   sale_id: { type: DataTypes.UUID, allowNull: false },
   product_id: { type: DataTypes.UUID },
@@ -248,10 +245,11 @@ SaleItem.belongsTo(Product, { foreignKey: 'product_id' });
 Tenant.hasMany(Notification, { foreignKey: 'tenant_id' });
 Notification.belongsTo(Tenant, { foreignKey: 'tenant_id' });
 
-Tenant.hasMany(CashSession, { foreignKey: 'tenant_id' });
-CashSession.belongsTo(Tenant, { foreignKey: 'tenant_id' });
-CashSession.hasMany(Sale, { foreignKey: 'cash_session_id' });
-Sale.belongsTo(CashSession, { foreignKey: 'cash_session_id' });
+// FIX: CashSession sin constraints para evitar Error 1215/121 en MySQL/Laragon
+Tenant.hasMany(CashSession, { foreignKey: 'tenant_id', constraints: false });
+CashSession.belongsTo(Tenant, { foreignKey: 'tenant_id', constraints: false });
+CashSession.hasMany(Sale, { foreignKey: 'cash_session_id', constraints: false });
+Sale.belongsTo(CashSession, { foreignKey: 'cash_session_id', constraints: false });
 
 export { sequelize };
 export default sequelize;
