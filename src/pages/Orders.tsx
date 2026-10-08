@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { orderAPI, productAPI } from '@/api/client'
+import { orderAPI, productAPI, saleAPI } from '@/api/client'
 import { ORDER_STATUS_CONFIG, formatCurrency, formatDateTime } from '@/utils/permissions';
 import type { RepairOrder, OrderStatus, Product } from '@/types';
 import {
-  Plus, X, Phone, Wrench, Clock, Package, FileText, ChevronRight,
-  Check, DollarSign, Shield, Lock, Banknote, CreditCard, Smartphone, Calendar
+  Plus, X, Phone, Wrench, Clock, Package, FileText,
+  Check, DollarSign, Shield, Lock, Banknote, CreditCard, Smartphone, Calendar, Trash2, Wallet
 } from 'lucide-react';
 
 const COLUMN_ORDER: OrderStatus[] = ['por_revisar', 'en_reparacion', 'esperando_refaccion', 'listo', 'entregado'];
@@ -19,6 +19,14 @@ function getWarrantyInfo(order: RepairOrder) {
   if (diffDays < 0) return { expired: true, days: Math.abs(diffDays), text: `Vencida hace ${Math.abs(diffDays)} días` };
   if (diffDays === 0) return { expired: false, days: 0, text: 'Vence hoy' };
   return { expired: false, days: diffDays, text: `${diffDays} días restantes` };
+}
+
+function getPagoInfo(order: RepairOrder) {
+  const total = parseFloat(String(order.total || 0));
+  const anticipo = parseFloat(String(order.advance_payment || 0));
+  const resto = total - anticipo;
+  const pagado = resto <= 0 && total > 0;
+  return { total, anticipo, resto, pagado };
 }
 
 export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: string, status: OrderStatus) => void }) {
@@ -71,15 +79,15 @@ export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: 
       const order = res.data.order;
       setShowCreate(false);
       await loadData();
-
-      // SI HAY ANTICIPO -> MANDAR A POS CON CARRITO CARGADO
       if (formData.advance_payment && parseFloat(formData.advance_payment) > 0) {
         const pending = {
           folio: order.folio,
+          orderId: order.id,
           customer: formData.customer_name,
           device: `${formData.device_brand} ${formData.device_model || ''}`.trim(),
           amount: formData.advance_payment,
-          method: formData.payment_method_anticipo || 'efectivo'
+          method: formData.payment_method_anticipo || 'efectivo',
+          type: 'anticipo'
         };
         localStorage.setItem('pendingAnticipo', JSON.stringify(pending));
         navigate('/pos');
@@ -87,6 +95,47 @@ export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: 
     } catch (err: any) {
       alert(err.response?.data?.error || 'Error creando orden');
     }
+  };
+
+  const handleDeleteOrder = async (id: string) => {
+    if (!confirm('¿Seguro que quieres eliminar esta orden? Esta acción no se puede deshacer.')) return;
+    try {
+      await orderAPI.delete(id);
+      setSelectedOrder(null);
+      await loadData();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Error eliminando orden');
+    }
+  };
+
+  const handleLiquidate = async (order: RepairOrder, method: string = 'efectivo') => {
+    const { resto } = getPagoInfo(order);
+    if (resto <= 0) return alert('Esta orden ya está pagada');
+    if (!confirm(`¿Liquidar ${formatCurrency(resto)} de la orden ${order.folio}? Se registrará en corte de caja.`)) return;
+    try {
+      await orderAPI.liquidate(order.id, method);
+      alert('Orden liquidada correctamente ✅');
+      setSelectedOrder(null);
+      await loadData();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Error liquidando');
+    }
+  };
+
+  const handleLiquidateViaPOS = (order: RepairOrder) => {
+    const { resto } = getPagoInfo(order);
+    const pending = {
+      folio: order.folio,
+      orderId: order.id,
+      customer: order.customer_name,
+      device: `${order.device_brand} ${order.device_model}`.trim(),
+      amount: resto,
+      method: 'efectivo',
+      type: 'liquidacion'
+    };
+    localStorage.setItem('pendingAnticipo', JSON.stringify(pending));
+    setSelectedOrder(null);
+    navigate('/pos');
   };
 
   if (loading) {
@@ -112,7 +161,7 @@ export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: 
                 <div className="flex items-center gap-2"><span className={`w-2.5 h-2.5 rounded-full ${ORDER_STATUS_CONFIG[status].dot}`} /><span className="text-sm font-bold text-ink-700">{ORDER_STATUS_CONFIG[status].label}</span></div>
                 <span className="text-xs font-semibold bg-white px-2 py-0.5 rounded-full">{ordersByStatus[status]?.length || 0}</span>
               </div>
-              <div className="px-2 pb-2 space-y-2 min-h-">
+              <div className="px-2 pb-2 space-y-2 min-h-[100px]">
                 {ordersByStatus[status]?.map((order) => (<OrderCard key={order.id} order={order} dragging={draggingId === order.id} onDragStart={() => setDraggingId(order.id)} onDragEnd={() => { setDraggingId(null); setDragOverCol(null); }} onClick={() => setSelectedOrder(order)} />))}
                 {(!ordersByStatus[status] || ordersByStatus[status].length === 0) && <div className="text-center py-8 text-ink-300 text-xs">Sin órdenes</div>}
               </div>
@@ -122,14 +171,22 @@ export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: 
       </div>
 
       {selectedOrder && (
-        <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} products={apiProducts} onAddPart={async (productId: string, qty: number) => {
-          try {
-            const res = await orderAPI.addPart(selectedOrder.id, { product_id: productId, quantity: qty });
-            const newPart = res.data.part; const updatedOrder = res.data.order;
-            setOrders((prev) => prev.map((o) => o.id === selectedOrder.id? {...o, parts_used: [...(o.parts_used || []), newPart], cost_parts: updatedOrder.cost_parts, total: updatedOrder.total } as any : o));
-            setSelectedOrder((prev) => prev? {...prev, parts_used: [...(prev.parts_used || []), newPart], cost_parts: updatedOrder.cost_parts, total: updatedOrder.total } as any : null);
-          } catch (err: any) { alert(err.response?.data?.error || 'Error agregando refacción'); }
-        }} />
+        <OrderDetailModal 
+          order={selectedOrder} 
+          onClose={() => setSelectedOrder(null)} 
+          products={apiProducts} 
+          onDelete={handleDeleteOrder}
+          onLiquidate={handleLiquidate}
+          onLiquidateViaPOS={handleLiquidateViaPOS}
+          onAddPart={async (productId: string, qty: number) => {
+            try {
+              const res = await orderAPI.addPart(selectedOrder.id, { product_id: productId, quantity: qty });
+              const newPart = res.data.part; const updatedOrder = res.data.order;
+              setOrders((prev) => prev.map((o) => o.id === selectedOrder.id? {...o, parts_used: [...(o.parts_used || []), newPart], cost_parts: updatedOrder.cost_parts, total: updatedOrder.total } as any : o));
+              setSelectedOrder((prev) => prev? {...prev, parts_used: [...(prev.parts_used || []), newPart], cost_parts: updatedOrder.cost_parts, total: updatedOrder.total } as any : null);
+            } catch (err: any) { alert(err.response?.data?.error || 'Error agregando refacción'); }
+          }} 
+        />
       )}
 
       {showCreate && <CreateOrderModal onClose={() => setShowCreate(false)} onCreate={handleCreateOrder} />}
@@ -139,11 +196,16 @@ export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: 
 
 function OrderCard({ order, dragging, onDragStart, onDragEnd, onClick }: any) {
   const warranty = getWarrantyInfo(order);
+  const { resto, pagado } = getPagoInfo(order);
   return (
-    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick} className={`card p-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-all ${dragging? 'opacity-50 rotate-2 scale-95' : ''} ${warranty &&!warranty.expired? 'border-l-4 border-l-green-500' : ''} ${warranty?.expired? 'border-l-4 border-l-red-400 opacity-75' : ''}`}>
+    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick} className={`card p-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-all ${dragging? 'opacity-50 rotate-2 scale-95' : ''} ${warranty &&!warranty.expired? 'border-l-4 border-l-green-500' : ''} ${warranty?.expired? 'border-l-4 border-l-red-400 opacity-75' : ''} ${pagado? 'bg-green-50/50 border-green-200' : ''}`}>
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-bold bg-ink-100 px-2 py-0.5 rounded">{order.folio}</span>
-        {order.advance_payment > 0 && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold">${order.advance_payment} ant.</span>}
+        {pagado ? (
+          <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded font-bold flex items-center gap-1"><Check className="w-3 h-3" />Pagado</span>
+        ) : order.advance_payment > 0 ? (
+          <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded font-bold">Debe {formatCurrency(resto)}</span>
+        ) : null}
       </div>
       <p className="font-semibold text-sm truncate">{order.customer_name}</p>
       <p className="text-xs text-ink-500 flex items-center gap-1"><Phone className="w-3 h-3" />{order.customer_phone || 'Sin teléfono'}</p>
@@ -159,12 +221,15 @@ function OrderCard({ order, dragging, onDragStart, onDragEnd, onClick }: any) {
   );
 }
 
-function OrderDetailModal({ order, onClose, products, onAddPart }: any) {
+function OrderDetailModal({ order, onClose, products, onAddPart, onDelete, onLiquidate, onLiquidateViaPOS }: any) {
   const [tab, setTab] = useState<'info' | 'parts'>('info');
   const warranty = getWarrantyInfo(order);
+  const { total, anticipo, resto, pagado } = getPagoInfo(order);
+  const [payMethod, setPayMethod] = useState<'efectivo' | 'tarjeta' | 'transferencia'>('efectivo');
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="card w-full max-w-lg max-h- flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div className="card w-full max-w-lg max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="p-5 border-b flex items-center justify-between">
           <h3 className="font-bold text-lg">{order.folio} - {order.customer_name}</h3>
           <button onClick={onClose}><X className="w-5 h-5" /></button>
@@ -173,16 +238,51 @@ function OrderDetailModal({ order, onClose, products, onAddPart }: any) {
           <button onClick={() => setTab('info')} className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${tab === 'info'? 'bg-white shadow' : ''}`}><FileText className="w-4 h-4 inline mr-1" />Info</button>
           <button onClick={() => setTab('parts')} className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${tab === 'parts'? 'bg-white shadow' : ''}`}><Package className="w-4 h-4 inline mr-1" />Refacciones</button>
         </div>
-        <div className="flex-1 overflow-auto p-5 space-y-3">
+        <div className="flex-1 overflow-auto p-5 space-y-4">
           {tab === 'info' && (
             <>
               <p className="text-sm"><b>Equipo:</b> {order.device_brand} {order.device_model} ({order.device_type})</p>
               <p className="text-sm"><b>Falla:</b> {order.problem_description}</p>
-              <div className="bg-ink-50 rounded-lg p-3 grid grid-cols-2 gap-2 text-sm">
-                <div><p className="text-ink-400 text-xs">Total</p><p className="font-bold text-base">{formatCurrency(order.total)}</p></div>
-                <div><p className="text-ink-400 text-xs">Anticipo</p><p className="font-bold text-green-600">{formatCurrency(order.advance_payment)}</p></div>
-                <div className="col-span-2 border-t pt-2 mt-1 flex justify-between font-bold"><span>Resta:</span><span className="text-orange-600">{formatCurrency(order.total - order.advance_payment)}</span></div>
+              
+              <div className={`rounded-xl p-4 border-2 ${pagado? 'bg-green-50 border-green-300' : 'bg-ink-50 border-ink-200'} space-y-2`}>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div><p className="text-ink-400 text-xs">Total</p><p className="font-bold text-base">{formatCurrency(total)}</p></div>
+                  <div><p className="text-ink-400 text-xs">Anticipo</p><p className="font-bold text-green-600">{formatCurrency(anticipo)}</p></div>
+                </div>
+                
+                {pagado ? (
+                  <div className="bg-green-600 text-white rounded-lg p-3 text-center font-bold flex items-center justify-center gap-2">
+                    <Check className="w-5 h-5" /> Pagado completo ✅
+                  </div>
+                ) : (
+                  <>
+                    <div className="bg-orange-100 border-2 border-orange-200 rounded-lg p-3 text-center">
+                      <p className="text-xs text-orange-600 font-semibold">RESTA POR PAGAR</p>
+                      <p className="text-2xl font-bold text-orange-700">{formatCurrency(resto)}</p>
+                    </div>
+                    
+                    <div className="space-y-2 pt-2">
+                      <label className="label text-xs">Método de pago liquidación</label>
+                      <select className="input" value={payMethod} onChange={(e) => setPayMethod(e.target.value as any)}>
+                        <option value="efectivo">Efectivo</option>
+                        <option value="tarjeta">Tarjeta</option>
+                        <option value="transferencia">Transferencia</option>
+                      </select>
+                      
+                      <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => onLiquidate(order, payMethod)} className="btn-primary py-2.5">
+                          <Wallet className="w-4 h-4" /> Liquidar {formatCurrency(resto)}
+                        </button>
+                        <button onClick={() => onLiquidateViaPOS(order)} className="btn-secondary py-2.5 border-2 border-primary-300 text-primary-700">
+                          <Banknote className="w-4 h-4" /> Cobrar en POS
+                        </button>
+                      </div>
+                      <p className="text-xs text-ink-400 text-center">Liquidar directo registra en corte. POS te lleva a caja.</p>
+                    </div>
+                  </>
+                )}
               </div>
+
               {warranty && <div className={`rounded-lg p-3 text-sm ${warranty.expired? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}><Shield className="w-4 h-4 inline mr-1" />Garantía: {warranty.text} - vence {formatDateTime(order.warranty_ends_at)}</div>}
               <p className="text-xs text-ink-400"><Calendar className="w-3 h-3 inline mr-1" />Bloqueo: {order.lock_type} | Garantía: {order.warranty_value} {order.warranty_unit}</p>
             </>
@@ -193,6 +293,14 @@ function OrderDetailModal({ order, onClose, products, onAddPart }: any) {
               <AddPartForm products={products} onAdd={onAddPart} />
             </div>
           )}
+        </div>
+        
+        {/* FOOTER CON ELIMINAR */}
+        <div className="p-4 border-t bg-white flex gap-2">
+          <button onClick={() => onDelete(order.id)} className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-red-50 text-red-600 border border-red-200 font-semibold hover:bg-red-100">
+            <Trash2 className="w-4 h-4" /> Eliminar
+          </button>
+          <button onClick={onClose} className="flex-1 btn-secondary">Cerrar</button>
         </div>
       </div>
     </div>
@@ -224,7 +332,7 @@ function CreateOrderModal({ onClose, onCreate }: any) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="card w-full max-w-lg max-h- flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div className="card w-full max-w-lg max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-6 border-b">
           <h2 className="text-xl font-bold">Nueva Orden</h2>
           <button onClick={onClose}><X className="w-5 h-5" /></button>
@@ -239,7 +347,7 @@ function CreateOrderModal({ onClose, onCreate }: any) {
             <div><label className="label">Marca *</label><input className="input" value={form.device_brand} onChange={(e) => setForm({...form, device_brand: e.target.value })} /></div>
             <div><label className="label">Modelo</label><input className="input" value={form.device_model} onChange={(e) => setForm({...form, device_model: e.target.value })} /></div>
           </div>
-          <div><label className="label">Problema reportado</label><textarea className="input min-h-" value={form.problem_description} onChange={(e) => setForm({...form, problem_description: e.target.value })} /></div>
+          <div><label className="label">Problema reportado</label><textarea className="input min-h-[70px]" value={form.problem_description} onChange={(e) => setForm({...form, problem_description: e.target.value })} /></div>
 
           <div className="bg-ink-50 rounded-xl p-4 space-y-3 border-2 border-dashed border-primary-200">
             <h4 className="font-bold text-sm flex items-center gap-2"><DollarSign className="w-4 h-4 text-primary-600"/> Costos + Anticipo a POS</h4>
@@ -257,9 +365,6 @@ function CreateOrderModal({ onClose, onCreate }: any) {
                     <option value="tarjeta">Tarjeta</option>
                     <option value="transferencia">Transferencia</option>
                   </select>
-                  <p className="text-xs text-green-700 mt-1.5 bg-white rounded px-2 py-1.5 border border-green-200">
-                    Se cobrará en POS: <b>"Anticipo Orden RP-XXX - {form.customer_name || 'Cliente'}"</b> por <b>{formatCurrency(form.advance_payment)}</b>
-                  </p>
                 </div>
               </div>
             )}

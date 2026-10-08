@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { RepairOrder, OrderPart, Product } from '../models.js';
+import { RepairOrder, OrderPart, Product, Sale, SaleItem } from '../models.js';
 import { sequelize } from '../models.js';
 import { authMiddleware, authorize, requireTenantId } from '../middleware/auth.js';
 
@@ -56,6 +56,93 @@ router.put('/:id', authorize(['owner', 'technician']), async (req, res) => {
   if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
   const fields = ['customer_name','customer_phone','device_type','device_brand','device_model','problem_description','diagnostic','private_notes','cost_labor','total','advance_payment','lock_type','warranty_value','warranty_unit'];
   fields.forEach((f) => { if (req.body[f]!== undefined) order[f] = req.body[f]; });
+  await order.save();
+  res.json({ order });
+});
+
+// LIQUIDAR RESTO - COBRA EL RESTO Y MARCA COMO PAGADO + CREA VENTA PARA CORTE
+router.post('/:id/liquidate', authorize(['owner','technician','cashier']), async (req, res) => {
+  const tenantId = requireTenantId(req, res);
+  if (!tenantId) return;
+  const { payment_method } = req.body;
+  const order = await RepairOrder.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
+  if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
+
+  const total = parseFloat(order.total || 0);
+  const advance = parseFloat(order.advance_payment || 0);
+  const resto = total - advance;
+
+  if (resto <= 0) return res.status(400).json({ error: 'Esta orden ya está pagada' });
+
+  const t = await sequelize.transaction();
+  try {
+    // Crear venta para el corte de caja
+    const count = await Sale.count({ where: { tenant_id: tenantId }, transaction: t });
+    const folio = `V-${String(count + 1).padStart(3, '0')}`;
+
+    const sale = await Sale.create({
+      id: uuidv4(),
+      tenant_id: tenantId,
+      folio,
+      subtotal: resto,
+      discount: 0,
+      total: resto,
+      payment_method: payment_method || 'efectivo',
+      cash_received: resto,
+      change: 0,
+      customer_id: null,
+      customer_name: order.customer_name,
+      user_id: req.user.id,
+      user_name: req.user.name,
+      status: 'completed'
+    }, { transaction: t });
+
+    // Producto anticipo/liquidacion para no afectar stock real
+    let anticipoProd = await Product.findOne({ where: { tenant_id: tenantId, sku: 'ANTICIPO' }, transaction: t });
+    if (!anticipoProd) {
+      anticipoProd = await Product.create({
+        id: uuidv4(),
+        tenant_id: tenantId,
+        sku: 'ANTICIPO',
+        name: 'Anticipo Orden Reparacion',
+        sale_price: resto,
+        cost_price: 0,
+        stock: 999999,
+        min_stock: 0,
+      }, { transaction: t });
+    }
+
+    await SaleItem.create({
+      id: uuidv4(),
+      tenant_id: tenantId,
+      sale_id: sale.id,
+      product_id: anticipoProd.id,
+      name: `Liquidación Orden ${order.folio} - ${order.customer_name}`,
+      price: resto,
+      quantity: 1,
+      discount: 0,
+    }, { transaction: t });
+
+    // Actualizar orden como pagada
+    order.advance_payment = total;
+    await order.save({ transaction: t });
+
+    await t.commit();
+    res.json({ order, sale });
+  } catch (err) {
+    await t.rollback();
+    console.error('ERROR LIQUIDANDO:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ENDPOINT PARA LIQUIDAR VIA POS (solo actualiza la orden después de cobrar en POS)
+router.put('/:id/mark-paid', authorize(['owner','technician','cashier']), async (req, res) => {
+  const tenantId = requireTenantId(req, res);
+  if (!tenantId) return;
+  const order = await RepairOrder.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
+  if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
+  order.advance_payment = order.total;
   await order.save();
   res.json({ order });
 });

@@ -86,6 +86,10 @@ export const orderAPI = {
   addPart: (orderId: string, data: { product_id: string; quantity: number }) =>
     api.post(`/orders/${orderId}/parts`, data),
   delete: (id: string) => api.delete(`/orders/${id}`),
+  liquidate: (id: string, payment_method: string) =>
+  api.post(`/orders/${id}/liquidate`, { payment_method }),
+  markPaid: (id: string) =>
+  api.put(`/orders/${id}/mark-paid`),
 };
 
 // ===== Sales API =====
