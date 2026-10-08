@@ -53,7 +53,7 @@ async function start() {
     console.log('✓ Conexión a MySQL establecida');
 
     // Usamos alter: true solo la primera vez para agregar cash_session_id si falta
-    await sequelize.sync({ alter: true });
+    await sequelize.sync({ alter: false });
     console.log('✓ Modelos sincronizados');
 
     app.listen(PORT, () => {
