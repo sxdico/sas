@@ -70,4 +70,21 @@ router.put('/:id/toggle-active', async (req, res) => {
   res.json({ user: { id: user.id, active: user.active } });
 });
 
+// Owner resetea password de su empleado
+router.put('/:id/reset-password', async (req, res) => {
+  const tenantId = requireTenantId(req, res);
+  if (!tenantId) return;
+  const { newPassword } = req.body;
+  const user = await User.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (user.role === 'owner') return res.status(400).json({ error: 'No puedes resetear al owner desde aquí' });
+  
+  const rawPassword = newPassword && newPassword.length >= 6 
+    ? newPassword 
+    : crypto.randomBytes(8).toString('base64').slice(0, 10);
+  const hash = await bcrypt.hash(rawPassword, 10);
+  user.password_hash = hash;
+  await user.save();
+  res.json({ user: { id: user.id, email: user.email }, password: rawPassword });
+});
 export default router;

@@ -41,10 +41,13 @@ export const authAPI = {
 // ===== Tenants API =====
 export const tenantAPI = {
   list: () => api.get('/tenants'),
-  create: (data: { name_taller: string; name_dueno: string; email: string; phone: string; plan?: string }) =>
-    api.post('/tenants', data),
+  create: (data: any) => api.post('/tenants', data),
   suspend: (id: string) => api.put(`/tenants/${id}/suspend`),
   reactivate: (id: string) => api.put(`/tenants/${id}/reactivate`),
+  delete: (id: string) => api.delete(`/tenants/${id}`),
+  listUsers: (tenantId: string) => api.get(`/tenants/${tenantId}/users`),
+  resetUserPassword: (userId: string, newPassword?: string) => 
+    api.put(`/tenants/users/${userId}/reset-password`, { newPassword }),
 };
 
 // ===== Users API =====
@@ -54,6 +57,7 @@ export const userAPI = {
     api.post('/users', data),
   updateRole: (id: string, role: string) => api.put(`/users/${id}/role`, { role }),
   toggleActive: (id: string) => api.put(`/users/${id}/toggle-active`),
+  resetPassword: (id: string, newPassword?: string) => api.put(`/users/${id}/reset-password`, { newPassword }),
 };
 
 // ===== Products API =====
