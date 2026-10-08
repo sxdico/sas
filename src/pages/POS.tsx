@@ -1,15 +1,25 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { productAPI, saleAPI } from '@/api/client'
+import { productAPI, saleAPI, orderAPI } from '@/api/client'
 import { formatCurrency } from '@/utils/permissions';
 import type { Product, Category, Customer, SaleItem, PaymentMethod } from '@/types';
 import {
-  Search, ShoppingCart, Plus, Minus, Trash2, Percent, X, User,
-  CreditCard, Banknote, Smartphone, Clock, Check, AlertTriangle,
+  Search, ShoppingCart, Plus, Minus, Trash2, X, User,
+  CreditCard, Banknote, Smartphone, Check, AlertTriangle,
   Package,
 } from 'lucide-react';
 
 interface POSProps {
   onSaleComplete: (saleData: SaleItem[], total: number, method: PaymentMethod, customerName: string | null) => void;
+}
+
+interface PendingAnticipo {
+  folio: string;
+  orderId?: string;
+  customer: string;
+  device?: string;
+  amount: string | number;
+  method?: string;
+  type?: 'anticipo' | 'liquidacion';
 }
 
 export default function POS({ onSaleComplete }: POSProps) {
@@ -23,13 +33,13 @@ export default function POS({ onSaleComplete }: POSProps) {
   const [cart, setCart] = useState<SaleItem[]>([]);
   const [showCheckout, setShowCheckout] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [heldSales, setHeldSales] = useState<{ items: SaleItem[]; customer: Customer | null }[]>([]);
+  const [heldSales] = useState<{ items: SaleItem[]; customer: Customer | null }[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo');
   const [cashReceived, setCashReceived] = useState('');
-  const [lineDiscountEdit, setLineDiscountEdit] = useState<string | null>(null);
   const [saleCompleteMsg, setSaleCompleteMsg] = useState(false);
   const [saleError, setSaleError] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [pendingOrderInfo, setPendingOrderInfo] = useState<PendingAnticipo | null>(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -49,7 +59,6 @@ export default function POS({ onSaleComplete }: POSProps) {
 
   useEffect(() => { loadData(); }, []);
 
-  // ESCONDE EL ANTICIPO DE LA VITRINA (ya no verás 999999 pz)
   const visibleProducts = useMemo(() => products.filter((p: any) => p.sku!== 'ANTICIPO' &&!p.name.toLowerCase().includes('anticipo')), [products]);
 
   const filteredProducts = useMemo(() => {
@@ -68,26 +77,28 @@ export default function POS({ onSaleComplete }: POSProps) {
 
   const favoriteProducts = useMemo(() => visibleProducts.filter((p: any) => p.favorite), [visibleProducts]);
 
-  // SI VIENES DE ORDENES, CARGA EL ANTICIPO AUTOMATICO AL CARRITO
+  // CARGA ANTICIPO O LIQUIDACION DESDE ORDENES
   useEffect(() => {
     if (loading) return;
     const pendingRaw = localStorage.getItem('pendingAnticipo');
     if (!pendingRaw) return;
     try {
-      const pending = JSON.parse(pendingRaw);
+      const pending: PendingAnticipo = JSON.parse(pendingRaw);
+      setPendingOrderInfo(pending);
       const anticipoProduct = products.find((p: any) => p.sku === 'ANTICIPO');
       const prodId = anticipoProduct?.id || `ANTICIPO-${pending.folio}`;
 
+      const isLiquidacion = pending.type === 'liquidacion';
       const customItem: SaleItem = {
         product_id: prodId,
-        name: `Anticipo Orden ${pending.folio} - ${pending.customer}${pending.device? ` - ${pending.device}` : ''}`,
-        price: parseFloat(pending.amount),
+        name: `${isLiquidacion ? 'Liquidación' : 'Anticipo'} Orden ${pending.folio} - ${pending.customer}${pending.device? ` - ${pending.device}` : ''}`,
+        price: parseFloat(String(pending.amount)),
         quantity: 1,
         discount: 0,
       };
 
       setCart([customItem]);
-      setPaymentMethod(pending.method || 'efectivo');
+      setPaymentMethod((pending.method as PaymentMethod) || 'efectivo');
       setCashReceived(String(pending.amount));
       setShowCheckout(true);
       localStorage.removeItem('pendingAnticipo');
@@ -125,33 +136,14 @@ export default function POS({ onSaleComplete }: POSProps) {
     });
   };
 
-  const updateDiscount = (id: string, discount: number) => {
-    setCart((prev) => prev.map((i) =>
-      i.product_id === id? {...i, discount: Math.max(0, Math.min(discount, i.price * i.quantity)) } : i
-    ));
-  };
-
   const removeFromCart = (id: string) => setCart((prev) => prev.filter((i) => i.product_id!== id));
-  const clearCart = () => { setCart([]); setSelectedCustomer(null); };
-
-  const holdSale = () => {
-    if (cart.length === 0) return;
-    setHeldSales((prev) => [...prev, { items: cart, customer: selectedCustomer }]);
-    clearCart();
-  };
-
-  const resumeSale = (idx: number) => {
-    const held = heldSales[idx];
-    setCart(held.items);
-    setSelectedCustomer(held.customer);
-    setHeldSales((prev) => prev.filter((_, i) => i!== idx));
-  };
+  const clearCart = () => { setCart([]); setSelectedCustomer(null); setPendingOrderInfo(null); };
 
   const completeSale = async () => {
     setProcessing(true);
     setSaleError(null);
     try {
-      const isAnticipoSale = cart.some(i => String(i.product_id).startsWith('ANTICIPO') || i.name.toLowerCase().includes('anticipo orden'));
+      const isAnticipoSale = cart.some(i => String(i.product_id).startsWith('ANTICIPO') || i.name.toLowerCase().includes('anticipo orden') || i.name.toLowerCase().includes('liquidación orden'));
 
       await saleAPI.create({
         items: cart.map((i) => ({
@@ -167,6 +159,15 @@ export default function POS({ onSaleComplete }: POSProps) {
         discount: totalDiscount,
       });
 
+      // SI ERA LIQUIDACION, MARCAR ORDEN COMO PAGADA
+      if (pendingOrderInfo?.orderId && pendingOrderInfo?.type === 'liquidacion') {
+        try {
+          await orderAPI.markPaid(pendingOrderInfo.orderId);
+        } catch (e) {
+          console.error('No se pudo marcar orden como pagada, pero venta si se registro', e);
+        }
+      }
+      
       if (!isAnticipoSale) {
         setProducts((prev) => prev.map((p) => {
           const cartItem = cart.find((i) => i.product_id === p.id);
@@ -180,6 +181,7 @@ export default function POS({ onSaleComplete }: POSProps) {
       clearCart();
       setCashReceived('');
       setPaymentMethod('efectivo');
+      setPendingOrderInfo(null);
       setSaleCompleteMsg(true);
       setTimeout(() => setSaleCompleteMsg(false), 2500);
       await loadData();
@@ -196,6 +198,8 @@ export default function POS({ onSaleComplete }: POSProps) {
     { method: 'transferencia', label: 'Transferencia', icon: Smartphone },
     { method: 'credito', label: 'Crédito', icon: User },
   ];
+
+  const isAnticipoInCart = cart.some(i => i.name.toLowerCase().includes('anticipo') || i.name.toLowerCase().includes('liquidación'));
 
   if (loading) {
     return (
@@ -254,7 +258,7 @@ export default function POS({ onSaleComplete }: POSProps) {
         </div>
       </div>
 
-      <div className="hidden md:flex flex-col w-[30%] bg-white min-w-">
+      <div className="hidden md:flex flex-col w-[30%] bg-white min-w-0">
         <div className="px-4 py-3 border-b flex items-center justify-between">
           <div className="flex items-center gap-2"><ShoppingCart className="w-5 h-5 text-primary-600" /><span className="font-bold">Ticket</span></div>
           {cart.length > 0 && <button onClick={clearCart} className="text-error-500 p-1.5"><Trash2 className="w-4 h-4" /></button>}
@@ -295,14 +299,19 @@ export default function POS({ onSaleComplete }: POSProps) {
             {totalDiscount > 0 && <div className="flex justify-between text-sm text-success-600"><span>Descuentos</span><span>-{formatCurrency(totalDiscount)}</span></div>}
             <div className="flex justify-between items-baseline pt-1"><span className="text-sm font-semibold">Total</span><span className="text-3xl font-bold tabular-nums">{formatCurrency(total)}</span></div>
           </div>
-          <button onClick={() => setShowCheckout(true)} disabled={cart.length === 0} className="btn-primary w-full py-3 text-base"><CreditCard className="w-5 h-5" /> Cobrar {cart[0]?.name.includes('Anticipo')? 'Anticipo' : ''}</button>
+          <button onClick={() => setShowCheckout(true)} disabled={cart.length === 0} className="btn-primary w-full py-3 text-base">
+            <CreditCard className="w-5 h-5" /> Cobrar {isAnticipoInCart ? (pendingOrderInfo?.type === 'liquidacion' ? 'Liquidación' : 'Anticipo') : ''}
+          </button>
         </div>
       </div>
 
       {showCheckout && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() =>!processing && setShowCheckout(false)}>
           <div className="card w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-5"><h2 className="text-xl font-bold">Cobrar {cart[0]?.name.includes('Anticipo')? 'Anticipo' : 'Venta'}</h2><button onClick={() => setShowCheckout(false)}><X className="w-5 h-5" /></button></div>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-xl font-bold">Cobrar {isAnticipoInCart ? (pendingOrderInfo?.type === 'liquidacion' ? 'Liquidación' : 'Anticipo') : 'Venta'}</h2>
+              <button onClick={() => setShowCheckout(false)}><X className="w-5 h-5" /></button>
+            </div>
             <div className="bg-ink-50 rounded-xl p-3 mb-4">
               {cart.map(i => <p key={i.product_id} className="text-sm font-medium">{i.name} - {formatCurrency(i.price)}</p>)}
             </div>
@@ -319,7 +328,7 @@ export default function POS({ onSaleComplete }: POSProps) {
               </div>
             )}
             {saleError && <div className="bg-error-50 text-error-700 rounded-lg p-3 mb-4 text-sm flex items-center gap-2"><AlertTriangle className="w-4 h-4" />{saleError}</div>}
-            <button onClick={completeSale} disabled={!canCheckout || processing} className="btn-primary w-full py-3 text-base">{processing? 'Procesando...' : <><Check className="w-5 h-5" /> Confirmar {cart[0]?.name.includes('Anticipo')? 'anticipo' : 'venta'} {formatCurrency(total)}</>}</button>
+            <button onClick={completeSale} disabled={!canCheckout || processing} className="btn-primary w-full py-3 text-base">{processing? 'Procesando...' : <><Check className="w-5 h-5" /> Confirmar {isAnticipoInCart ? (pendingOrderInfo?.type === 'liquidacion' ? 'liquidación' : 'anticipo') : 'venta'} {formatCurrency(total)}</>}</button>
           </div>
         </div>
       )}
@@ -327,7 +336,7 @@ export default function POS({ onSaleComplete }: POSProps) {
       {saleCompleteMsg && (
         <div className="fixed bottom-6 right-6 z-50">
           <div className="bg-success-600 text-white rounded-xl px-5 py-3 shadow-lg flex items-center gap-3">
-            <Check className="w-6 h-6" /><div><p className="font-bold">¡Venta completada!</p><p className="text-sm text-success-100">Stock actualizado</p></div>
+            <Check className="w-6 h-6" /><div><p className="font-bold">¡Venta completada!</p><p className="text-sm text-success-100">{pendingOrderInfo?.type === 'liquidacion' ? 'Orden liquidada ✅' : 'Stock actualizado'}</p></div>
           </div>
         </div>
       )}

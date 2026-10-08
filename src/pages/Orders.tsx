@@ -43,17 +43,7 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
   const [dragOverCol, setDragOverCol] = useState<OrderStatus | null>(null);
 
   const goToPOS = () => {
-    if (onNavigate) {
-      onNavigate('pos');
-    } else {
-      // fallback para tu sistema de currentPage
-      window.dispatchEvent(new CustomEvent('fixpro-navigate', { detail: 'pos' }));
-      // ultimo fallback
-      setTimeout(() => {
-        const btn = document.querySelector('[data-nav="pos"]') as HTMLButtonElement;
-        btn?.click();
-      }, 100);
-    }
+    if (onNavigate) onNavigate('pos');
   };
 
   const loadData = async () => {
@@ -115,32 +105,19 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
   };
 
   const handleDeleteOrder = async (id: string) => {
-    if (!confirm('¿Seguro que quieres eliminar esta orden? Esta acción no se puede deshacer.')) return;
+    if (!confirm('¿Seguro que quieres eliminar esta orden?')) return;
     try {
       await orderAPI.delete(id);
       setSelectedOrder(null);
       await loadData();
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Error eliminando orden');
+      alert(err.response?.data?.error || 'Error eliminando');
     }
   };
 
-  const handleLiquidate = async (order: RepairOrder, method: string = 'efectivo') => {
+  const handlePagarRestoPOS = (order: RepairOrder) => {
     const { resto } = getPagoInfo(order);
-    if (resto <= 0) return alert('Esta orden ya está pagada');
-    if (!confirm(`¿Liquidar ${formatCurrency(resto)} de la orden ${order.folio}? Se registrará en corte de caja.`)) return;
-    try {
-      await orderAPI.liquidate(order.id, method);
-      alert('Orden liquidada correctamente ✅');
-      setSelectedOrder(null);
-      await loadData();
-    } catch (err: any) {
-      alert(err.response?.data?.error || 'Error liquidando');
-    }
-  };
-
-  const handleLiquidateViaPOS = (order: RepairOrder) => {
-    const { resto } = getPagoInfo(order);
+    if (resto <= 0) return;
     const pending = {
       folio: order.folio,
       orderId: order.id,
@@ -193,8 +170,7 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
           onClose={() => setSelectedOrder(null)} 
           products={apiProducts} 
           onDelete={handleDeleteOrder}
-          onLiquidate={handleLiquidate}
-          onLiquidateViaPOS={handleLiquidateViaPOS}
+          onPagarResto={handlePagarRestoPOS}
           onAddPart={async (productId: string, qty: number) => {
             try {
               const res = await orderAPI.addPart(selectedOrder.id, { product_id: productId, quantity: qty });
@@ -238,11 +214,10 @@ function OrderCard({ order, dragging, onDragStart, onDragEnd, onClick }: any) {
   );
 }
 
-function OrderDetailModal({ order, onClose, products, onAddPart, onDelete, onLiquidate, onLiquidateViaPOS }: any) {
+function OrderDetailModal({ order, onClose, products, onAddPart, onDelete, onPagarResto }: any) {
   const [tab, setTab] = useState<'info' | 'parts'>('info');
   const warranty = getWarrantyInfo(order);
   const { total, anticipo, resto, pagado } = getPagoInfo(order);
-  const [payMethod, setPayMethod] = useState<'efectivo' | 'tarjeta' | 'transferencia'>('efectivo');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -253,15 +228,20 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onDelete, onLiq
         </div>
         <div className="flex gap-2 p-3 border-b bg-ink-50">
           <button onClick={() => setTab('info')} className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${tab === 'info'? 'bg-white shadow' : ''}`}><FileText className="w-4 h-4 inline mr-1" />Info</button>
-          <button onClick={() => setTab('parts')} className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${tab === 'parts'? 'bg-white shadow' : ''}`}><Package className="w-4 h-4 inline mr-1" />Refacciones</button>
+          <button onClick={() => setTab('parts')} className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${tab === 'parts'? 'bg-white shadow' : ''}`}><Package className="w-4 h-4 inline mr-1" />Refacciones y Garantía</button>
         </div>
         <div className="flex-1 overflow-auto p-5 space-y-4">
           {tab === 'info' && (
             <>
-              <p className="text-sm"><b>Equipo:</b> {order.device_brand} {order.device_model} ({order.device_type})</p>
-              <p className="text-sm"><b>Falla:</b> {order.problem_description}</p>
+              <div className="space-y-2 text-sm bg-ink-50 rounded-lg p-3">
+                <p><b>Equipo:</b> {order.device_brand} {order.device_model} ({order.device_type})</p>
+                <p><b>Tel:</b> {order.customer_phone || 'Sin teléfono'}</p>
+                <p><b>Falla:</b> {order.problem_description}</p>
+                {order.diagnostic && <p><b>Diagnóstico:</b> {order.diagnostic}</p>}
+                <p className="text-xs text-ink-500 flex items-center gap-1"><Lock className="w-3 h-3" /> Bloqueo: {order.lock_type} | Garantía: {order.warranty_value} {order.warranty_unit}</p>
+              </div>
               
-              <div className={`rounded-xl p-4 border-2 ${pagado? 'bg-green-50 border-green-300' : 'bg-ink-50 border-ink-200'} space-y-2`}>
+              <div className={`rounded-xl p-4 border-2 ${pagado? 'bg-green-50 border-green-300' : 'bg-white border-ink-200'} space-y-2`}>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div><p className="text-ink-400 text-xs">Total</p><p className="font-bold text-base">{formatCurrency(total)}</p></div>
                   <div><p className="text-ink-400 text-xs">Anticipo</p><p className="font-bold text-green-600">{formatCurrency(anticipo)}</p></div>
@@ -277,36 +257,53 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onDelete, onLiq
                       <p className="text-xs text-orange-600 font-semibold">RESTA POR PAGAR</p>
                       <p className="text-2xl font-bold text-orange-700">{formatCurrency(resto)}</p>
                     </div>
-                    
-                    <div className="space-y-2 pt-2">
-                      <label className="label text-xs">Método de pago liquidación</label>
-                      <select className="input" value={payMethod} onChange={(e) => setPayMethod(e.target.value as any)}>
-                        <option value="efectivo">Efectivo</option>
-                        <option value="tarjeta">Tarjeta</option>
-                        <option value="transferencia">Transferencia</option>
-                      </select>
-                      
-                      <div className="grid grid-cols-2 gap-2">
-                        <button onClick={() => onLiquidate(order, payMethod)} className="btn-primary py-2.5">
-                          <Wallet className="w-4 h-4" /> Liquidar {formatCurrency(resto)}
-                        </button>
-                        <button onClick={() => onLiquidateViaPOS(order)} className="btn-secondary py-2.5 border-2 border-primary-300 text-primary-700">
-                          <Banknote className="w-4 h-4" /> Cobrar en POS
-                        </button>
-                      </div>
-                    </div>
+                    <button onClick={() => onPagarResto(order)} className="btn-primary w-full py-3 text-base">
+                      <Wallet className="w-5 h-5" /> Pagar {formatCurrency(resto)} en POS
+                    </button>
+                    <p className="text-xs text-ink-400 text-center">Se cargará en POS como "Liquidación Orden {order.folio}" y quedará en corte de caja</p>
                   </>
                 )}
               </div>
 
-              {warranty && <div className={`rounded-lg p-3 text-sm ${warranty.expired? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}><Shield className="w-4 h-4 inline mr-1" />Garantía: {warranty.text} - vence {formatDateTime(order.warranty_ends_at)}</div>}
-              <p className="text-xs text-ink-400"><Calendar className="w-3 h-3 inline mr-1" />Bloqueo: {order.lock_type} | Garantía: {order.warranty_value} {order.warranty_unit}</p>
+              {warranty && (
+                <div className={`rounded-lg p-3 text-sm border ${warranty.expired? 'bg-red-50 text-red-700 border-red-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
+                  <Shield className="w-4 h-4 inline mr-1" />
+                  <b>Garantía:</b> {warranty.text} - vence {formatDateTime(order.warranty_ends_at)}
+                </div>
+              )}
             </>
           )}
           {tab === 'parts' && (
-            <div className="space-y-3">
-              {order.OrderParts?.map((p: any) => <div key={p.id} className="flex justify-between text-sm border-b py-2"><span>{p.product_name} x{p.quantity}</span><span>{formatCurrency(p.unit_cost * p.quantity)}</span></div>)}
-              <AddPartForm products={products} onAdd={onAddPart} />
+            <div className="space-y-4">
+              <div>
+                <h4 className="font-bold text-sm mb-2 flex items-center gap-2"><Package className="w-4 h-4" /> Refacciones usadas</h4>
+                {order.OrderParts && order.OrderParts.length > 0 ? (
+                  <div className="space-y-2">
+                    {order.OrderParts.map((p: any) => (
+                      <div key={p.id} className="flex justify-between text-sm border rounded-lg p-2.5 bg-ink-50">
+                        <span>{p.product_name} x{p.quantity}</span>
+                        <span className="font-bold">{formatCurrency(p.unit_cost * p.quantity)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-ink-400 bg-ink-50 rounded-lg p-3 text-center">Sin refacciones aún</p>
+                )}
+              </div>
+              
+              <div className="border-t pt-4">
+                <h4 className="font-bold text-sm mb-2">Agregar refacción</h4>
+                <AddPartForm products={products} onAdd={onAddPart} />
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="font-bold text-sm mb-2 flex items-center gap-2"><Shield className="w-4 h-4" /> Garantía</h4>
+                <div className="bg-ink-50 rounded-lg p-3 text-sm space-y-1">
+                  <p><b>Tipo bloqueo:</b> {order.lock_type}</p>
+                  <p><b>Garantía:</b> {order.warranty_value} {order.warranty_unit}</p>
+                  {order.warranty_ends_at && <p><b>Vence:</b> {formatDateTime(order.warranty_ends_at)}</p>}
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -342,8 +339,6 @@ function CreateOrderModal({ onClose, onCreate }: any) {
     lock_type: 'Sin bloqueo', warranty_value: 10, warranty_unit: 'Días' as 'Días' | 'Meses'
   });
   const saldo = (form.total || 0) - (form.advance_payment || 0);
-  const icons = { efectivo: Banknote, tarjeta: CreditCard, transferencia: Smartphone } as any;
-  const IconPay = icons[form.payment_method_anticipo];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -370,19 +365,6 @@ function CreateOrderModal({ onClose, onCreate }: any) {
               <div><label className="label font-bold text-primary-700">Costo total $ *</label><input type="number" min="0" className="input font-bold text-lg border-primary-300" value={form.total} onChange={(e) => setForm({...form, total: parseFloat(e.target.value) || 0 })} /></div>
               <div><label className="label font-bold text-green-700">Anticipo $</label><input type="number" min="0" className="input font-bold border-green-300" value={form.advance_payment} onChange={(e) => setForm({...form, advance_payment: parseFloat(e.target.value) || 0 })} /></div>
             </div>
-            {form.advance_payment > 0 && (
-              <div className="bg-green-50 border-2 border-green-200 rounded-lg p-3 space-y-2">
-                <div className="flex items-center gap-2 text-green-800 font-bold text-sm"><Check className="w-4 h-4"/> Se cobrará en caja como venta POS</div>
-                <div>
-                  <label className="label flex items-center gap-1"><IconPay className="w-3.5 h-3.5"/> Método de pago anticipo</label>
-                  <select className="input" value={form.payment_method_anticipo} onChange={(e) => setForm({...form, payment_method_anticipo: e.target.value as any })}>
-                    <option value="efectivo">Efectivo</option>
-                    <option value="tarjeta">Tarjeta</option>
-                    <option value="transferencia">Transferencia</option>
-                  </select>
-                </div>
-              </div>
-            )}
             <div className={`rounded-lg p-3 text-center font-bold text-base ${saldo <= 0 && form.total > 0? 'bg-green-100 text-green-700 border-2 border-green-200' : 'bg-orange-100 text-orange-700 border-2 border-orange-200'}`}>
               {saldo <= 0 && form.total > 0? `¡Pagado completo! ✅` : `Resta por pagar: ${formatCurrency(saldo)}`}
             </div>
