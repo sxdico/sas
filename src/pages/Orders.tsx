@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { orderAPI, productAPI } from '@/api/client'
 import { ORDER_STATUS_CONFIG, formatCurrency, formatDateTime } from '@/utils/permissions';
 import type { RepairOrder, OrderStatus, Product } from '@/types';
@@ -28,6 +29,7 @@ export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: 
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<OrderStatus | null>(null);
+  const navigate = useNavigate();
 
   const loadData = async () => {
     setLoading(true);
@@ -63,6 +65,30 @@ export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: 
     setDraggingId(null); setDragOverCol(null);
   };
 
+  const handleCreateOrder = async (formData: any) => {
+    try {
+      const res = await orderAPI.create(formData);
+      const order = res.data.order;
+      setShowCreate(false);
+      await loadData();
+
+      // SI HAY ANTICIPO -> MANDAR A POS CON CARRITO CARGADO
+      if (formData.advance_payment && parseFloat(formData.advance_payment) > 0) {
+        const pending = {
+          folio: order.folio,
+          customer: formData.customer_name,
+          device: `${formData.device_brand} ${formData.device_model || ''}`.trim(),
+          amount: formData.advance_payment,
+          method: formData.payment_method_anticipo || 'efectivo'
+        };
+        localStorage.setItem('pendingAnticipo', JSON.stringify(pending));
+        navigate('/pos');
+      }
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Error creando orden');
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -96,101 +122,90 @@ export default function Orders({ onStatusChange }: { onStatusChange?: (orderId: 
       </div>
 
       {selectedOrder && (
-        <OrderDetailModal
-          order={selectedOrder}
-          onClose={() => setSelectedOrder(null)}
-          products={apiProducts}
-          onAddPart={async (productId: string, qty: number) => {
-            try {
-              const res = await orderAPI.addPart(selectedOrder.id, { product_id: productId, quantity: qty });
-              const newPart = res.data.part; const updatedOrder = res.data.order;
-              setOrders((prev) => prev.map((o) => o.id === selectedOrder.id? {...o, parts_used: [...(o.parts_used || []), newPart], cost_parts: updatedOrder.cost_parts, total: updatedOrder.total } as any : o));
-              setSelectedOrder((prev) => prev? {...prev, parts_used: [...(prev.parts_used || []), newPart], cost_parts: updatedOrder.cost_parts, total: updatedOrder.total } as any : null);
-              setApiProducts((prev) => prev.map((p) => p.id === productId? {...p, stock: Math.max(0, p.stock - qty) } : p));
-            } catch (err: any) { alert(err.response?.data?.error || 'Error agregando refacción'); }
-          }}
-          onStatusChange={async (newStatus: OrderStatus) => {
-            try { await orderAPI.updateStatus(selectedOrder.id, newStatus); setSelectedOrder(null); loadData(); onStatusChange?.(selectedOrder.id, newStatus); } catch (err: any) { alert(err.response?.data?.error || 'Error cambiando estado'); }
-          }}
-        />
+        <OrderDetailModal order={selectedOrder} onClose={() => setSelectedOrder(null)} products={apiProducts} onAddPart={async (productId: string, qty: number) => {
+          try {
+            const res = await orderAPI.addPart(selectedOrder.id, { product_id: productId, quantity: qty });
+            const newPart = res.data.part; const updatedOrder = res.data.order;
+            setOrders((prev) => prev.map((o) => o.id === selectedOrder.id? {...o, parts_used: [...(o.parts_used || []), newPart], cost_parts: updatedOrder.cost_parts, total: updatedOrder.total } as any : o));
+            setSelectedOrder((prev) => prev? {...prev, parts_used: [...(prev.parts_used || []), newPart], cost_parts: updatedOrder.cost_parts, total: updatedOrder.total } as any : null);
+          } catch (err: any) { alert(err.response?.data?.error || 'Error agregando refacción'); }
+        }} />
       )}
 
-      {showCreate && (
-        <CreateOrderModal
-          onClose={() => setShowCreate(false)}
-          onCreate={async (data: any) => {
-            try {
-              const res = await orderAPI.create(data);
-              const newOrder = res.data.order || res.data;
-              setOrders((prev) => [...prev, newOrder]);
-              setShowCreate(false);
-              const anticipo = parseFloat(data.advance_payment || 0);
-              if (anticipo > 0) {
-                localStorage.setItem('pendingAnticipo', JSON.stringify({
-                  folio: newOrder.folio,
-                  customer: data.customer_name,
-                  device: `${data.device_brand} ${data.device_model}`.trim(),
-                  amount: anticipo,
-                  method: data.payment_method_anticipo || 'efectivo',
-                  total: data.total
-                }));
-                window.location.hash = '#/pos';
-                window.location.href = '/#/pos';
-              }
-            } catch (err: any) {
-              alert(err.response?.data?.error || err.response?.data?.detail || 'Error creando orden');
-            }
-          }}
-        />
-      )}
+      {showCreate && <CreateOrderModal onClose={() => setShowCreate(false)} onCreate={handleCreateOrder} />}
     </div>
   );
 }
 
 function OrderCard({ order, dragging, onDragStart, onDragEnd, onClick }: any) {
-  const saldo = (order.total || 0) - (order.advance_payment || 0);
-  const warrantyInfo = getWarrantyInfo(order);
-  const status = order.status as OrderStatus;
+  const warranty = getWarrantyInfo(order);
   return (
-    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick} className={`card p-3 cursor-pointer hover:shadow-md ${dragging? 'opacity-50' : ''}`}>
-      <div className="flex items-center justify-between mb-2"><span className="text-xs font-bold text-primary-600">{order.folio}</span><span className={`badge ${ORDER_STATUS_CONFIG[status].color}`}>{ORDER_STATUS_CONFIG[status].label}</span></div>
-      <p className="text-sm font-semibold">{order.customer_name}</p>
-      <p className="text-xs text-ink-500 mb-2">{order.device_brand} {order.device_model}</p>
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-        {order.lock_type && order.lock_type!== 'Sin bloqueo' && (<span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded flex items-center gap-1"><Lock className="w-3 h-3" /> {order.lock_type}</span>)}
-        {order.advance_payment > 0 && (<span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold">Anticipo: {formatCurrency(order.advance_payment)}</span>)}
-        {warrantyInfo && (<span className={`text-xs px-2 py-0.5 rounded flex items-center gap-1 ${warrantyInfo.expired? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}><Shield className="w-3 h-3" /> {warrantyInfo.expired? 'Vencida' : `${warrantyInfo.days}d`}</span>)}
+    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick} className={`card p-3 cursor-grab active:cursor-grabbing hover:shadow-md transition-all ${dragging? 'opacity-50 rotate-2 scale-95' : ''} ${warranty &&!warranty.expired? 'border-l-4 border-l-green-500' : ''} ${warranty?.expired? 'border-l-4 border-l-red-400 opacity-75' : ''}`}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-bold bg-ink-100 px-2 py-0.5 rounded">{order.folio}</span>
+        {order.advance_payment > 0 && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded font-bold">${order.advance_payment} ant.</span>}
       </div>
-      <p className="text-xs text-ink-400 line-clamp-2 mb-2">{order.problem_description}</p>
-      <div className="flex items-center justify-between pt-2 border-t">
+      <p className="font-semibold text-sm truncate">{order.customer_name}</p>
+      <p className="text-xs text-ink-500 flex items-center gap-1"><Phone className="w-3 h-3" />{order.customer_phone || 'Sin teléfono'}</p>
+      <div className="mt-2 text-xs bg-ink-50 rounded px-2 py-1 flex items-center gap-1">
+        <Wrench className="w-3 h-3" />{order.device_brand} {order.device_model}
+      </div>
+      <div className="mt-2 flex items-center justify-between">
+        <span className="text-xs font-bold">{formatCurrency(order.total)}</span>
         <span className="text-xs text-ink-400 flex items-center gap-1"><Clock className="w-3 h-3" />{formatDateTime(order.created_at)}</span>
-        {order.total > 0 && (<div className="text-right"><span className="text-sm font-bold">{formatCurrency(order.total)}</span>{saldo > 0 && <p className="text-xs text-red-600 font-bold">Debe: {formatCurrency(saldo)}</p>}</div>)}
+      </div>
+      {warranty && <div className={`mt-2 text-xs px-2 py-1 rounded flex items-center gap-1 ${warranty.expired? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}`}><Shield className="w-3 h-3" />{warranty.text}</div>}
+    </div>
+  );
+}
+
+function OrderDetailModal({ order, onClose, products, onAddPart }: any) {
+  const [tab, setTab] = useState<'info' | 'parts'>('info');
+  const warranty = getWarrantyInfo(order);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="card w-full max-w-lg max-h- flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="p-5 border-b flex items-center justify-between">
+          <h3 className="font-bold text-lg">{order.folio} - {order.customer_name}</h3>
+          <button onClick={onClose}><X className="w-5 h-5" /></button>
+        </div>
+        <div className="flex gap-2 p-3 border-b bg-ink-50">
+          <button onClick={() => setTab('info')} className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${tab === 'info'? 'bg-white shadow' : ''}`}><FileText className="w-4 h-4 inline mr-1" />Info</button>
+          <button onClick={() => setTab('parts')} className={`px-3 py-1.5 rounded-lg text-sm font-semibold ${tab === 'parts'? 'bg-white shadow' : ''}`}><Package className="w-4 h-4 inline mr-1" />Refacciones</button>
+        </div>
+        <div className="flex-1 overflow-auto p-5 space-y-3">
+          {tab === 'info' && (
+            <>
+              <p className="text-sm"><b>Equipo:</b> {order.device_brand} {order.device_model} ({order.device_type})</p>
+              <p className="text-sm"><b>Falla:</b> {order.problem_description}</p>
+              <div className="bg-ink-50 rounded-lg p-3 grid grid-cols-2 gap-2 text-sm">
+                <div><p className="text-ink-400 text-xs">Total</p><p className="font-bold text-base">{formatCurrency(order.total)}</p></div>
+                <div><p className="text-ink-400 text-xs">Anticipo</p><p className="font-bold text-green-600">{formatCurrency(order.advance_payment)}</p></div>
+                <div className="col-span-2 border-t pt-2 mt-1 flex justify-between font-bold"><span>Resta:</span><span className="text-orange-600">{formatCurrency(order.total - order.advance_payment)}</span></div>
+              </div>
+              {warranty && <div className={`rounded-lg p-3 text-sm ${warranty.expired? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}><Shield className="w-4 h-4 inline mr-1" />Garantía: {warranty.text} - vence {formatDateTime(order.warranty_ends_at)}</div>}
+              <p className="text-xs text-ink-400"><Calendar className="w-3 h-3 inline mr-1" />Bloqueo: {order.lock_type} | Garantía: {order.warranty_value} {order.warranty_unit}</p>
+            </>
+          )}
+          {tab === 'parts' && (
+            <div className="space-y-3">
+              {order.OrderParts?.map((p: any) => <div key={p.id} className="flex justify-between text-sm border-b py-2"><span>{p.product_name} x{p.quantity}</span><span>{formatCurrency(p.unit_cost * p.quantity)}</span></div>)}
+              <AddPartForm products={products} onAdd={onAddPart} />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 }
 
-function OrderDetailModal({ order, onClose, products, onAddPart, onStatusChange }: any) {
-  const [activeTab, setActiveTab] = useState<'info' | 'diagnostic' | 'parts' | 'warranty'>('info');
-  const [showPartPicker, setShowPartPicker] = useState(false);
-  const [partQty, setPartQty] = useState(1);
-  const statusOptions: OrderStatus[] = ['por_revisar', 'en_reparacion', 'esperando_refaccion', 'listo', 'entregado'];
-  const saldo = (order.total || 0) - (order.advance_payment || 0);
-  const warrantyInfo = getWarrantyInfo(order);
+function AddPartForm({ products, onAdd }: any) {
+  const [pid, setPid] = useState(''); const [qty, setQty] = useState(1);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="card w-full max-w-2xl max-h- flex flex-col" onClick={(e) => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b flex items-center justify-between"><div><div className="flex items-center gap-3"><span className="text-lg font-bold text-primary-600">{order.folio}</span><span className={`badge ${ORDER_STATUS_CONFIG[order.status as OrderStatus].color}`}>{ORDER_STATUS_CONFIG[order.status as OrderStatus].label}</span></div><p className="text-sm text-ink-500">{order.customer_name} · {order.device_brand} {order.device_model}</p></div><button onClick={onClose}><X className="w-5 h-5" /></button></div>
-        <div className="flex gap-1 px-6 pt-4 border-b overflow-x-auto">{([{ key: 'info', label: 'Info', icon: FileText }, { key: 'diagnostic', label: 'Diagnóstico', icon: Wrench }, { key: 'parts', label: 'Refacciones', icon: Package }, { key: 'warranty', label: 'Garantía', icon: Shield }] as const).map(({ key, label, icon: Icon }) => (<button key={key} onClick={() => setActiveTab(key)} className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 whitespace-nowrap ${activeTab === key? 'border-primary-600 text-primary-600' : 'border-transparent text-ink-500'}`}><Icon className="w-4 h-4" /> {label}</button>))}</div>
-        <div className="flex-1 overflow-auto p-6">
-          {activeTab === 'info' && (<div className="space-y-4"><div className="grid grid-cols-2 gap-4"><div><p className="text-xs text-ink-400 uppercase font-semibold">Cliente</p><p className="text-sm font-medium">{order.customer_name}</p></div><div><p className="text-xs text-ink-400 uppercase font-semibold">Teléfono</p><p className="text-sm font-medium flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> {order.customer_phone}</p></div><div><p className="text-xs text-ink-400 uppercase font-semibold">Dispositivo</p><p className="text-sm font-medium">{order.device_type}</p></div><div><p className="text-xs text-ink-400 uppercase font-semibold">Marca/Modelo</p><p className="text-sm font-medium">{order.device_brand} {order.device_model}</p></div></div><div><p className="text-xs text-ink-400 uppercase font-semibold mb-1">Problema</p><p className="text-sm bg-ink-50 rounded-lg p-3">{order.problem_description}</p></div><div className="grid grid-cols-2 gap-3"><div className="bg-blue-50 rounded-lg p-3 text-center"><p className="text-xs text-blue-600">Anticipo</p><p className="text-lg font-bold text-blue-700">{formatCurrency(order.advance_payment || 0)}</p></div><div className="bg-primary-50 rounded-lg p-3 text-center"><p className="text-xs text-primary-600">Total</p><p className="text-lg font-bold text-primary-700">{formatCurrency(order.total || 0)}</p></div></div>{saldo > 0? (<div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 text-center"><p className="text-xs text-red-600 font-semibold uppercase">Saldo pendiente</p><p className="text-2xl font-bold text-red-700">{formatCurrency(saldo)}</p></div>) : order.total > 0 && (<div className="bg-green-50 border-2 border-green-200 rounded-lg p-4 text-center"><p className="text-xs text-green-600 font-semibold uppercase">¡Pagado completo!</p><p className="text-2xl font-bold text-green-700">{formatCurrency(order.total)}</p></div>)}</div>)}
-          {activeTab === 'diagnostic' && (<div className="space-y-3"><p className="text-sm bg-ink-50 rounded-lg p-3">{order.diagnostic || order.problem_description || 'Sin diagnóstico aún'}</p></div>)}
-          {activeTab === 'parts' && (<div className="space-y-3">{(order.parts_used || order.OrderParts || []).length > 0? (order.parts_used || order.OrderParts).map((part: any, i: number) => (<div key={i} className="flex items-center justify-between bg-ink-50 rounded-lg px-3 py-2.5"><div><p className="text-sm font-medium">{part.product_name}</p><p className="text-xs text-ink-500">{part.quantity} × {formatCurrency(part.unit_cost)}</p></div><span className="text-sm font-bold">{formatCurrency(part.unit_cost * part.quantity)}</span></div>)) : <p className="text-sm text-ink-400 text-center py-6">No se han usado refacciones</p>}<button onClick={() => setShowPartPicker(true)} className="btn-secondary w-full"><Plus className="w-4 h-4" /> Agregar refacción</button></div>)}
-          {activeTab === 'warranty' && (<div className="space-y-4"><div className="bg-ink-50 rounded-lg p-4"><div className="flex items-center gap-2 mb-3"><Shield className="w-5 h-5 text-primary-600" /><h3 className="font-bold">Garantía del servicio</h3></div><div className="grid grid-cols-2 gap-4"><div><p className="text-xs text-ink-400 uppercase font-semibold">Período</p><p className="text-lg font-bold flex items-center gap-1"><Calendar className="w-4 h-4"/>{order.warranty_value || 10} {order.warranty_unit || 'Días'}</p></div>{order.delivered_at && (<div><p className="text-xs text-ink-400 uppercase font-semibold">Entregado</p><p className="text-sm font-medium">{formatDateTime(order.delivered_at)}</p></div>)}</div></div>{order.warranty_ends_at && (<div className={`rounded-lg p-4 border-2 ${warrantyInfo?.expired? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}><p className="text-xs uppercase font-bold opacity-70">Vence el</p><p className={`text-2xl font-bold ${warrantyInfo?.expired? 'text-red-700' : 'text-green-700'}`}>{formatDateTime(order.warranty_ends_at)}</p><p className={`text-xs mt-1 font-semibold ${warrantyInfo?.expired? 'text-red-600' : 'text-green-600'}`}>{warrantyInfo?.text}</p></div>)}{!order.warranty_ends_at && (<p className="text-sm text-ink-400 text-center py-4">La garantía se calcula al entregar la orden: {order.warranty_value || 10} {order.warranty_unit || 'Días'} desde la entrega</p>)}</div>)}
-        </div>
-        <div className="border-t p-4 flex items-center gap-2 flex-wrap"><span className="text-sm text-ink-500 font-medium">Cambiar estado:</span>{statusOptions.map((s) => (<button key={s} onClick={() => onStatusChange(s)} className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${order.status === s? ORDER_STATUS_CONFIG[s].color : 'bg-ink-100 text-ink-500'}`}>{ORDER_STATUS_CONFIG[s].label}</button>))}</div>
-      </div>
-      {showPartPicker && (<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => setShowPartPicker(false)}><div className="card w-full max-w-md p-5 max-h- flex flex-col" onClick={(e) => e.stopPropagation()}><h3 className="font-bold mb-3">Agregar refacción</h3><input type="number" min="1" value={partQty} onChange={(e) => setPartQty(Math.max(1, parseInt(e.target.value) || 1))} className="input w-20 mb-3" /><div className="flex-1 overflow-auto space-y-2">{products.map((p: any) => (<button key={p.id} onClick={() => { onAddPart(p.id, partQty); setShowPartPicker(false); }} disabled={p.stock <= 0} className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg border hover:bg-primary-50 text-left disabled:opacity-50"><div><p className="text-sm font-medium">{p.name}</p><p className="text-xs">Stock: {p.stock} · {formatCurrency(p.cost_price)}</p></div><ChevronRight className="w-4 h-4" /></button>))}</div></div></div>)}
+    <div className="flex gap-2 mt-3">
+      <select className="input flex-1" value={pid} onChange={(e) => setPid(e.target.value)}><option value="">Selecciona refacción</option>{products.map((p: any) => <option key={p.id} value={p.id}>{p.name} - {p.stock}pz</option>)}</select>
+      <input type="number" min={1} className="input w-20" value={qty} onChange={(e) => setQty(parseInt(e.target.value) || 1)} />
+      <button onClick={() => pid && onAdd(pid, qty)} className="btn-primary"><Plus className="w-4 h-4" /></button>
     </div>
   );
 }

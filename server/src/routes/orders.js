@@ -21,47 +21,31 @@ router.get('/', authorize(['owner', 'technician']), async (req, res) => {
 router.post('/', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
-  const {
-    customer_name, customer_phone, device_type, device_brand,
-    device_model, problem_description, advance_payment, lock_type,
-    warranty_value, warranty_unit, total, cost_labor
-  } = req.body;
-
-  if (!customer_name || !device_brand) {
-    return res.status(400).json({ error: 'Cliente y marca son requeridos' });
-  }
-
-  const t = await sequelize.transaction();
   try {
-    const count = await RepairOrder.count({ where: { tenant_id: tenantId }, transaction: t });
-    const folio = `RP-${String(count + 1).padStart(3, '0')}`;
-
+    const folio = `RP-${Date.now().toString().slice(-6)}`;
     const order = await RepairOrder.create({
       id: uuidv4(), tenant_id: tenantId, folio,
-      customer_name, customer_phone, device_type: device_type || 'Smartphone',
-      device_brand, device_model, problem_description,
-      status: 'por_revisar', technician_id: req.user.id,
+      customer_name: req.body.customer_name,
+      customer_phone: req.body.customer_phone,
+      device_type: req.body.device_type || 'Smartphone',
+      device_brand: req.body.device_brand,
+      device_model: req.body.device_model,
+      problem_description: req.body.problem_description,
+      status: 'por_revisar',
+      technician_id: req.user.id,
       technician_name: req.user.name,
       cost_parts: 0,
-      cost_labor: cost_labor || total || 0,
-      total: total || 0,
-      advance_payment: advance_payment || 0,
-      lock_type: lock_type || 'Sin bloqueo',
-      warranty_value: warranty_value || 10,
-      warranty_unit: warranty_unit || 'Días',
-    }, { transaction: t });
-
-    await t.commit();
-    // Regresamos solo la orden, la venta se hará en POS
+      cost_labor: req.body.cost_labor || req.body.total || 0,
+      total: req.body.total || 0,
+      advance_payment: req.body.advance_payment || 0,
+      lock_type: req.body.lock_type || 'Sin bloqueo',
+      warranty_value: req.body.warranty_value || 10,
+      warranty_unit: req.body.warranty_unit || 'Días',
+    });
     res.status(201).json({ order });
-
   } catch (err) {
-    await t.rollback();
     console.error('ERROR CREANDO ORDEN:', err);
-
-console.error(err.stack);
-console.error('BODY QUE LLEGÓ:', req.body);
-    res.status(500).json({ error: 'Error al crear orden', detail: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -72,7 +56,6 @@ router.put('/:id', authorize(['owner', 'technician']), async (req, res) => {
   if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
   const fields = ['customer_name','customer_phone','device_type','device_brand','device_model','problem_description','diagnostic','private_notes','cost_labor','total','advance_payment','lock_type','warranty_value','warranty_unit'];
   fields.forEach((f) => { if (req.body[f]!== undefined) order[f] = req.body[f]; });
-  if (req.body.total === undefined) order.total = parseFloat(order.cost_parts) + parseFloat(order.cost_labor);
   await order.save();
   res.json({ order });
 });
@@ -85,8 +68,8 @@ router.put('/:id/status', authorize(['owner', 'technician']), async (req, res) =
   const t = await sequelize.transaction();
   try {
     order.status = req.body.status;
-    if (req.body.status === 'listo' && !order.ready_at) order.ready_at = new Date();
-    if (req.body.status === 'entregado' && !order.delivered_at) {
+    if (req.body.status === 'listo' &&!order.ready_at) order.ready_at = new Date();
+    if (req.body.status === 'entregado' &&!order.delivered_at) {
       order.delivered_at = new Date();
       if (order.warranty_value && order.warranty_unit) {
         const entrega = new Date(order.delivered_at);
