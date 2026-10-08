@@ -1,10 +1,7 @@
 import { Router } from 'express';
 import { DataTypes, UUIDV4 } from 'sequelize';
 import { CashSession, Sale, sequelize } from '../models.js';
-import authModule from '../middleware/auth.js';
-
-// Compatibilidad con cualquier export: authenticate, protect, auth, default
-const authenticate = authModule.authenticate || authModule.default || authModule.protect || authModule.auth || authModule;
+import { authMiddleware } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -19,17 +16,15 @@ export const Expense = sequelize.define('Expense', {
   user_name: { type: DataTypes.STRING(150) },
 }, { tableName: 'expenses', createdAt: 'created_at', updatedAt: 'updated_at' });
 
-router.use(authenticate);
+router.use(authMiddleware);
 
 router.get('/current', async (req, res) => {
   try {
     const tenant_id = req.user.tenant_id;
     const session = await CashSession.findOne({ where: { tenant_id, status: 'open' }, order: [['opened_at', 'DESC']] });
     if (!session) return res.json({ session: null, summary: null });
-
     const sales = await Sale.findAll({ where: { cash_session_id: session.id } });
     const expenses = await Expense.findAll({ where: { cash_session_id: session.id } });
-
     const summary = {
       count: sales.length,
       total: sales.reduce((s, x) => s + Number(x.total), 0),
@@ -89,6 +84,7 @@ router.post('/expenses', async (req, res) => {
     });
     res.json({ expense: exp });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ error: 'Error al crear salida' });
   }
 });
