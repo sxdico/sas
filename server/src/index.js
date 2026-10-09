@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { sequelize } from './models.js';
 
 import authRoutes from './routes/auth.js';
@@ -12,14 +14,21 @@ import saleRoutes from './routes/sales.js';
 import deliveryRoutes from './routes/deliveries.js';
 import notificationRoutes from './routes/notifications.js';
 import cashRoutes from './routes/cash.js';
+import evidenciasRoutes from './routes/evidence.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: process.env.CLIENT_URL?.split(',') || 'http://localhost:5173',
   credentials: true,
 }));
 app.use(express.json());
+
+// Static para fotos - compatible Windows/Linux
+app.use('/uploads', express.static(path.join(__dirname, '..', '..', 'uploads')));
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -31,18 +40,15 @@ app.use('/api/sales', saleRoutes);
 app.use('/api/deliveries', deliveryRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/cash', cashRoutes);
+app.use('/api/evidencias', evidenciasRoutes);
 
-// Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Error handler
 app.use((err, _req, res, _next) => {
   console.error('[ERROR]', err.message);
-  res.status(err.status || 500).json({
-    error: err.message || 'Error interno del servidor',
-  });
+  res.status(err.status || 500).json({ error: err.message || 'Error interno' });
 });
 
 const PORT = process.env.PORT || 3001;
@@ -51,21 +57,16 @@ async function start() {
   try {
     await sequelize.authenticate();
     console.log('✓ Conexión a MySQL establecida');
-
-    // Usamos alter: true solo la primera vez para agregar cash_session_id si falta
     await sequelize.sync({ alter: false });
     console.log('✓ Modelos sincronizados');
-
     app.listen(PORT, () => {
       console.log(`\n🚀 FixPro API corriendo en http://localhost:${PORT}`);
       console.log(`   Health: http://localhost:${PORT}/api/health`);
+      console.log(`   Evidencias: http://localhost:${PORT}/api/evidencias`);
+      console.log(`   Uploads: http://localhost:${PORT}/uploads`);
     });
   } catch (err) {
     console.error('✗ Error al iniciar:', err.message);
-    console.error('\n  Asegúrate de:');
-    console.error('  1. Tener MySQL corriendo');
-    console.error('  2. Crear la DB: mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS fixpro"');
-    console.error('  3. Configurar server/.env correctamente');
     process.exit(1);
   }
 }

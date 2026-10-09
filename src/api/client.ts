@@ -7,7 +7,6 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach JWT token to every request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('fixpro_token');
   if (token) {
@@ -16,7 +15,6 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Auto-logout on 401
 api.interceptors.response.use(
   (res) => res,
   (error) => {
@@ -31,14 +29,11 @@ api.interceptors.response.use(
 
 export default api;
 
-// ===== Auth API =====
 export const authAPI = {
-  login: (email: string, password: string) =>
-    api.post('/auth/login', { email, password }),
+  login: (email: string, password: string) => api.post('/auth/login', { email, password }),
   me: () => api.get('/auth/me'),
 };
 
-// ===== Tenants API =====
 export const tenantAPI = {
   list: () => api.get('/tenants'),
   create: (data: any) => api.post('/tenants', data),
@@ -46,87 +41,72 @@ export const tenantAPI = {
   reactivate: (id: string) => api.put(`/tenants/${id}/reactivate`),
   delete: (id: string) => api.delete(`/tenants/${id}`),
   listUsers: (tenantId: string) => api.get(`/tenants/${tenantId}/users`),
-  resetUserPassword: (userId: string, newPassword?: string) => 
-    api.put(`/tenants/users/${userId}/reset-password`, { newPassword }),
+  resetUserPassword: (userId: string, newPassword?: string) => api.put(`/tenants/users/${userId}/reset-password`, { newPassword }),
 };
 
-// ===== Users API =====
 export const userAPI = {
   list: () => api.get('/users'),
-  create: (data: { name: string; email: string; phone: string; role: string; password?: string }) =>
-    api.post('/users', data),
+  create: (data: any) => api.post('/users', data),
   updateRole: (id: string, role: string) => api.put(`/users/${id}/role`, { role }),
   toggleActive: (id: string) => api.put(`/users/${id}/toggle-active`),
   resetPassword: (id: string, newPassword?: string) => api.put(`/users/${id}/reset-password`, { newPassword }),
 };
 
-// ===== Products API =====
 export const productAPI = {
-  list: (params?: { search?: string; category_id?: string }) =>
-    api.get('/products', { params }),
+  list: (params?: any) => api.get('/products', { params }),
   lowStock: () => api.get('/products/low-stock'),
   get: (id: string) => api.get(`/products/${id}`),
-  create: (data: Record<string, unknown>) => api.post('/products', data),
-  update: (id: string, data: Record<string, unknown>) => api.put(`/products/${id}`, data),
-  adjustStock: (id: string, data: { quantity: number; reason: string; type?: string }) =>
-    api.put(`/products/${id}/stock`, data),
+  create: (data: any) => api.post('/products', data),
+  update: (id: string, data: any) => api.put(`/products/${id}`, data),
+  adjustStock: (id: string, data: any) => api.put(`/products/${id}/stock`, data),
   delete: (id: string) => api.delete(`/products/${id}`),
   movements: (id: string) => api.get(`/products/${id}/movements`),
   categories: () => api.get('/products/categories/all'),
 };
 
-// ===== Orders API =====
 export const orderAPI = {
   list: () => api.get('/orders'),
   get: (id: string) => api.get(`/orders/${id}`),
-  create: (data: Record<string, unknown>) => api.post('/orders', data),
-  update: (id: string, data: Record<string, unknown>) => api.put(`/orders/${id}`, data),
-  updateStatus: (id: string, status: string) =>
-    api.put(`/orders/${id}/status`, { status }),
-  addPart: (orderId: string, data: { product_id: string; quantity: number }) =>
-    api.post(`/orders/${orderId}/parts`, data),
+  create: (data: any) => api.post('/orders', data),
+  update: (id: string, data: any) => api.put(`/orders/${id}`, data),
+  updateStatus: (id: string, status: string) => api.put(`/orders/${id}/status`, { status }),
+  addPart: (orderId: string, data: any) => api.post(`/orders/${orderId}/parts`, data),
   delete: (id: string) => api.delete(`/orders/${id}`),
-  liquidate: (id: string, payment_method: string) =>
-  api.post(`/orders/${id}/liquidate`, { payment_method }),
-  markPaid: (id: string) =>
-  api.put(`/orders/${id}/mark-paid`),
-  removePart: (orderId: string, partId: string) =>
-  api.delete(`/orders/${orderId}/parts/${partId}`),
+  liquidate: (id: string, payment_method: string) => api.post(`/orders/${id}/liquidate`, { payment_method }),
+  markPaid: (id: string) => api.put(`/orders/${id}/mark-paid`),
+  removePart: (orderId: string, partId: string) => api.delete(`/orders/${orderId}/parts/${partId}`),
 };
 
 export const cashAPI = {
   current: () => api.get('/cash/current'),
   open: (opening_amount: number) => api.post('/cash/open', { opening_amount }),
-  close: (data: { closing_amount: number; notes?: string }) => api.post('/cash/close', data),
+  close: (data: any) => api.post('/cash/close', data),
   history: () => api.get('/cash/history'),
   get: (id: string) => api.get(`/cash/${id}`),
-  // NUEVO PARA FINANZAS / SALIDAS
   expenses: () => api.get('/cash/expenses'),
-  createExpense: (data: { amount: number; reason: string; category?: string }) => api.post('/cash/expenses', data),
+  createExpense: (data: any) => api.post('/cash/expenses', data),
   deleteExpense: (id: string) => api.delete(`/cash/expenses/${id}`),
 };
 
-// ===== Sales API =====
 export const saleAPI = {
   list: () => api.get('/sales'),
   get: (id: string) => api.get(`/sales/${id}`),
-  create: (data: {
-    items: Array<{ product_id?: string; name: string; price: number; quantity: number; discount?: number }>;
-    payment_method: string;
-    cash_received?: number;
-    customer_id?: string;
-    discount?: number;
-  }) => api.post('/sales', data),
+  create: (data: any) => api.post('/sales', data),
 };
 
-// ===== Deliveries API =====
 export const deliveryAPI = {
   ready: () => api.get('/deliveries/ready'),
   deliver: (id: string) => api.put(`/deliveries/${id}/deliver`),
 };
 
-// ===== Notifications API =====
 export const notificationAPI = {
   list: () => api.get('/notifications'),
   markRead: (id: string) => api.put(`/notifications/${id}/read`),
+};
+
+// ===== NUEVO: EVIDENCIA =====
+export const evidenciaAPI = {
+  list: (orden_id: string) => api.get(`/evidencias?orden_id=${orden_id}`),
+  upload: (formData: FormData) => api.post('/evidencias', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+  delete: (id: string) => api.delete(`/evidencias/${id}`),
 };
