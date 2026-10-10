@@ -1,10 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
-import { orderAPI, productAPI } from '@/api/client'
+import { orderAPI, productAPI, evidenciaAPI } from '@/api/client'
 import { ORDER_STATUS_CONFIG, formatCurrency, formatDateTime } from '@/utils/permissions';
 import type { RepairOrder, OrderStatus, Product } from '@/types';
 import {
   Plus, X, Phone, Wrench, Clock, Package, FileText,
-  Check, DollarSign, Shield, Lock, Calendar, Trash2, Wallet, ChevronRight
+  Check, DollarSign, Shield, Lock, Calendar, Trash2, Wallet, ChevronRight, Camera, Upload
 } from 'lucide-react';
 
 const COLUMN_ORDER: OrderStatus[] = ['por_revisar', 'en_reparacion', 'esperando_refaccion', 'listo', 'entregado'];
@@ -78,10 +78,21 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
     setDraggingId(null); setDragOverCol(null);
   };
 
-  const handleCreateOrder = async (formData: any) => {
+  const handleCreateOrder = async (formData: any, fotosIngreso: File[] = []) => {
     try {
       const res = await orderAPI.create(formData);
       const order = res.data.order;
+      // Subir fotos de ingreso si hay
+      if (fotosIngreso && fotosIngreso.length > 0) {
+        for (const file of fotosIngreso) {
+          const fd = new FormData();
+          fd.append('foto', file);
+          fd.append('orden_id', order.id);
+          fd.append('tipo', 'ingreso');
+          fd.append('nota', 'Foto al ingreso - creación');
+          try { await evidenciaAPI.upload(fd); } catch (e) { console.error('Error subiendo foto ingreso', e); }
+        }
+      }
       setShowCreate(false);
       await loadData();
       if (formData.advance_payment && parseFloat(formData.advance_payment) > 0) {
@@ -115,7 +126,6 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
     goToPOS();
   };
 
-  // NUEVO: QUITAR REFACCION
   const handleRemovePart = async (orderId: string, partId: string) => {
     const partToRemove = (selectedOrder as any)?.OrderParts?.find((p: any) => p.id === partId) || (selectedOrder as any)?.parts_used?.find((p: any) => p.id === partId);
     if (!partToRemove) return;
@@ -229,7 +239,7 @@ function OrderCard({ order, dragging, onDragStart, onDragEnd, onClick }: any) {
 }
 
 function OrderDetailModal({ order, onClose, products, onAddPart, onRemovePart, onDelete, onPagarResto, onStatusChange }: any) {
-  const [activeTab, setActiveTab] = useState<'info' | 'diagnostic' | 'parts' | 'warranty'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'diagnostic' | 'parts' | 'warranty' | 'evidencia'>('info');
   const [showPartPicker, setShowPartPicker] = useState(false);
   const [partQty, setPartQty] = useState(1);
   const warrantyInfo = getWarrantyInfo(order);
@@ -252,7 +262,13 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onRemovePart, o
         </div>
 
         <div className="flex gap-1 px-6 pt-4 border-b overflow-x-auto">
-          {([{ key: 'info', label: 'Info', icon: FileText }, { key: 'diagnostic', label: 'Diagnóstico', icon: Wrench }, { key: 'parts', label: 'Refacciones', icon: Package }, { key: 'warranty', label: 'Garantía', icon: Shield }] as const).map(({ key, label, icon: Icon }) => (
+          {([
+            { key: 'info', label: 'Info', icon: FileText }, 
+            { key: 'diagnostic', label: 'Diagnóstico', icon: Wrench }, 
+            { key: 'parts', label: 'Refacciones', icon: Package }, 
+            { key: 'warranty', label: 'Garantía', icon: Shield },
+            { key: 'evidencia', label: 'Evidencia', icon: Camera }
+          ] as const).map(({ key, label, icon: Icon }) => (
             <button key={key} onClick={() => setActiveTab(key)} className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 whitespace-nowrap ${activeTab === key? 'border-primary-600 text-primary-600' : 'border-transparent text-ink-500'}`}><Icon className="w-4 h-4" /> {label}</button>
           ))}
         </div>
@@ -385,6 +401,10 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onRemovePart, o
               )}
             </div>
           )}
+
+          {activeTab === 'evidencia' && (
+            <EvidenciaTabContent ordenId={order.id} />
+          )}
         </div>
 
         <div className="border-t p-4 space-y-3 bg-white">
@@ -429,6 +449,96 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onRemovePart, o
   );
 }
 
+function EvidenciaTabContent({ ordenId }: { ordenId: string }) {
+  const [tipoActivo, setTipoActivo] = useState<'ingreso'|'durante'|'salida'>('ingreso');
+  const [datos, setDatos] = useState<any>({ ingreso: [], durante: [], salida: [] });
+  const [nota, setNota] = useState('');
+  const [preview, setPreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const cargar = async () => {
+    try {
+      const res = await evidenciaAPI.list(ordenId);
+      setDatos(res.data);
+    } catch (e) { console.error(e); }
+  };
+  useEffect(() => { cargar(); }, [ordenId]);
+
+  const subir = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    const fd = new FormData();
+    fd.append('foto', file);
+    fd.append('orden_id', ordenId);
+    fd.append('tipo', tipoActivo);
+    fd.append('nota', nota);
+    try {
+      await evidenciaAPI.upload(fd);
+      setNota('');
+      e.target.value = '';
+      await cargar();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Error subiendo foto');
+    } finally { setUploading(false); }
+  };
+
+  const borrar = async (id: string) => {
+    if (!confirm('¿Borrar esta foto?')) return;
+    await evidenciaAPI.delete(id);
+    await cargar();
+  };
+
+  const fotos = datos[tipoActivo] || [];
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <p className="text-xs text-blue-700 font-semibold flex items-center gap-1"><Camera className="w-4 h-4"/> Evidencia fotográfica del equipo</p>
+        <p className="text-xs text-blue-600 mt-1">Toma foto al ingresar, durante la reparación y al entregar. Te protege de reclamos de "ya venía rayado".</p>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {(['ingreso','durante','salida'] as const).map(t => (
+          <button key={t} onClick={() => setTipoActivo(t)}
+            className={`px-3 py-1.5 rounded-full text-sm border font-semibold ${tipoActivo===t ? 'bg-gray-900 text-white border-gray-900' : 'bg-gray-50 text-gray-600'}`}>
+            {t==='ingreso' ? 'Ingreso' : t==='durante' ? 'Durante reparación' : 'Salida'} ({datos[t]?.length || 0})
+          </button>
+        ))}
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        <label className="bg-blue-600 text-white px-4 py-2 rounded-lg cursor-pointer font-semibold text-sm hover:bg-blue-700">
+          {uploading ? 'Subiendo...' : '📷 Tomar / Subir foto'}
+          <input type="file" accept="image/*" capture="environment" hidden onChange={subir} disabled={uploading} />
+        </label>
+        <input value={nota} onChange={e=>setNota(e.target.value)} placeholder="Nota: pantalla estrellada, carcasa rayada..." className="flex-1 min-w-[200px] border rounded-lg px-3 py-2 text-sm" maxLength={100} />
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {fotos.length===0 && <p className="col-span-full text-center text-gray-400 py-8 text-sm border-2 border-dashed rounded-xl">No hay fotos en {tipoActivo}. Sube la primera.</p>}
+        {fotos.map((f: any) => (
+          <div key={f.id} className="border rounded-xl overflow-hidden relative bg-gray-50">
+            <img src={`/${f.thumbnail_url || f.url}`} className="w-full h-32 object-cover cursor-pointer" onClick={()=>setPreview(`/${f.url}`)} loading="lazy" />
+            <button onClick={()=>borrar(f.id)} className="absolute top-1 right-1 bg-black/70 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"><X size={12}/></button>
+            <div className="p-2 text-[11px] text-gray-600">
+              <div>{new Date(f.created_at).toLocaleString()}</div>
+              {f.nota && <div className="font-semibold text-gray-900 truncate">{f.nota}</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {preview && (
+        <div className="fixed inset-0 bg-black/80 z-[70] flex items-center justify-center p-4" onClick={()=>setPreview(null)}>
+          <img src={preview} className="max-w-full max-h-full rounded-xl" />
+          <button className="absolute top-4 right-4 text-white bg-black/50 rounded-full p-2"><X/></button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CreateOrderModal({ onClose, onCreate }: any) {
   const [form, setForm] = useState({
     customer_name: '', customer_phone: '', device_type: 'Smartphone',
@@ -437,7 +547,24 @@ function CreateOrderModal({ onClose, onCreate }: any) {
     payment_method_anticipo: 'efectivo' as 'efectivo' | 'tarjeta' | 'transferencia',
     lock_type: 'Sin bloqueo', warranty_value: 10, warranty_unit: 'Días' as 'Días' | 'Meses'
   });
+  const [fotosIngreso, setFotosIngreso] = useState<File[]>([]);
+  const [previewFotos, setPreviewFotos] = useState<string[]>([]);
   const saldo = (form.total || 0) - (form.advance_payment || 0);
+
+  const handleFotos = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setFotosIngreso(prev => [...prev, ...files]);
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (ev) => setPreviewFotos(prev => [...prev, ev.target?.result as string]);
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const quitarFoto = (index: number) => {
+    setFotosIngreso(prev => prev.filter((_, i) => i !== index));
+    setPreviewFotos(prev => prev.filter((_, i) => i !== index));
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -476,11 +603,31 @@ function CreateOrderModal({ onClose, onCreate }: any) {
               <div><label className="label">Unidad</label><select className="input" value={form.warranty_unit} onChange={(e) => setForm({...form, warranty_unit: e.target.value as 'Días' | 'Meses' })}><option>Días</option><option>Meses</option></select></div>
             </div>
           </div>
+
+          <div className="border-2 border-dashed border-blue-300 rounded-xl p-4 bg-blue-50/50 space-y-3">
+            <h4 className="font-bold text-sm flex items-center gap-2 text-blue-700"><Camera className="w-4 h-4"/> Evidencia de Ingreso (recomendado)</h4>
+            <p className="text-xs text-blue-600">Toma fotos del equipo al recibirlo para evitar reclamos</p>
+            <label className="flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-3 rounded-lg cursor-pointer font-semibold text-sm hover:bg-blue-700 w-full">
+              <Upload className="w-4 h-4"/> {fotosIngreso.length>0 ? `${fotosIngreso.length} fotos seleccionadas` : 'Tomar / Seleccionar fotos de ingreso'}
+              <input type="file" multiple accept="image/*" capture="environment" hidden onChange={handleFotos} />
+            </label>
+            {previewFotos.length>0 && (
+              <div className="grid grid-cols-3 gap-2">
+                {previewFotos.map((src, i) => (
+                  <div key={i} className="relative">
+                    <img src={src} className="w-full h-20 object-cover rounded-lg border" />
+                    <button type="button" onClick={()=>quitarFoto(i)} className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"><X size={10}/></button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
         </div>
         <div className="p-6 border-t flex gap-3 bg-white">
           <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
-          <button onClick={() => onCreate(form)} disabled={!form.customer_name ||!form.device_brand} className="btn-primary flex-1">
-            <Check className="w-4 h-4" /> {form.advance_payment>0? `Crear y cobrar ${formatCurrency(form.advance_payment)} en POS` : 'Crear orden'}
+          <button onClick={() => onCreate(form, fotosIngreso)} disabled={!form.customer_name ||!form.device_brand} className="btn-primary flex-1">
+            <Check className="w-4 h-4" /> {fotosIngreso.length>0 ? `Crear con ${fotosIngreso.length} fotos` : form.advance_payment>0? `Crear y cobrar ${formatCurrency(form.advance_payment)} en POS` : 'Crear orden'}
           </button>
         </div>
       </div>
