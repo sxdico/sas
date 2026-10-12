@@ -4,13 +4,31 @@ import { ORDER_STATUS_CONFIG, formatCurrency, formatDateTime } from '@/utils/per
 import type { RepairOrder, OrderStatus, Product } from '@/types';
 import {
   Plus, X, Phone, Wrench, Clock, Package, FileText,
-  Check, DollarSign, Shield, Lock, Calendar, Trash2, Wallet, ChevronRight, Camera, Upload
+  Check, DollarSign, Shield, Lock, Calendar, Trash2, Wallet, ChevronRight, Camera, Upload, KeyRound, Eye, EyeOff, Ban, Search, Filter, Smartphone, Hash
 } from 'lucide-react';
 
 const COLUMN_ORDER: OrderStatus[] = ['por_revisar', 'en_reparacion', 'esperando_refaccion', 'listo', 'entregado'];
+const PRIORITY_CONFIG = {
+  baja: { label: 'Baja', emoji: '🔵', color: 'bg-gray-100 text-gray-600 border border-gray-200', dot: 'bg-gray-400', ring: '' },
+  normal: { label: 'Normal', emoji: '⚪', color: 'bg-blue-50 text-blue-700 border border-blue-200', dot: 'bg-blue-500', ring: '' },
+  alta: { label: 'Alta', emoji: '🟠', color: 'bg-orange-100 text-orange-700 border border-orange-200', dot: 'bg-orange-500', ring: '' },
+  urgente: { label: 'Urgente', emoji: '🔴', color: 'bg-red-100 text-red-700 border border-red-300', dot: 'bg-red-600', ring: 'ring-2 ring-red-200' },
+  garantia: { label: 'Garantía', emoji: '🛡️', color: 'bg-purple-100 text-purple-700 border border-purple-200', dot: 'bg-purple-600', ring: '' },
+} as const;
+type Priority = keyof typeof PRIORITY_CONFIG;
+const PRIORITY_ORDER: Priority[] = ['urgente','garantia','alta','normal','baja'];
+
+function getPriorityInfo(order: any) {
+  const p = (order.priority || 'normal') as Priority;
+  return PRIORITY_CONFIG[p] || PRIORITY_CONFIG.normal;
+}
+
 const LOCK_TYPES = ['Sin bloqueo','Patrón','PIN','Contraseña','Cuenta Google','iCloud','MDM','Otro'];
+const LOCK_TYPES_WITH_CODE = ['PIN','Contraseña'];
 
 function getWarrantyInfo(order: RepairOrder) {
+  // Si es 0 días = sin garantía
+  if ((order as any).warranty_value === 0) return { expired: false, days: 0, text: 'Sin garantía', noWarranty: true } as any;
   if (!order.warranty_ends_at) return null;
   const endDate = new Date(order.warranty_ends_at);
   const today = new Date();
@@ -28,6 +46,43 @@ function getPagoInfo(order: RepairOrder) {
   return { total, anticipo, resto, pagado };
 }
 
+function getPromisedInfo(order: RepairOrder) {
+  if (!order.promised_at) return null;
+  const promised = new Date(order.promised_at);
+  const now = new Date();
+  const diffMs = promised.getTime() - now.getTime();
+  const diffHours = Math.ceil(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  const isOverdue = diffMs < 0 && !['listo','entregado'].includes(order.status);
+  const isToday = diffDays === 0 && diffMs >= 0;
+  const isTomorrow = diffDays === 1;
+  
+  let text = '';
+  let color = '';
+  if (isOverdue) {
+    const absDays = Math.abs(diffDays);
+    text = absDays === 0 ? '¡Vencida hoy!' : `¡Vencida hace ${absDays} día${absDays>1?'s':''}!`;
+    color = 'red';
+  } else if (isToday) {
+    text = `Vence hoy ${promised.toLocaleTimeString('es-MX', {hour: '2-digit', minute:'2-digit'})}`;
+    color = 'amber';
+  } else if (isTomorrow) {
+    text = 'Vence mañana';
+    color = 'amber';
+  } else if (diffDays > 0 && diffDays <= 2) {
+    text = `Vence en ${diffDays} días`;
+    color = 'blue';
+  } else if (diffDays > 0) {
+    text = `${diffDays} días restantes`;
+    color = 'gray';
+  } else {
+    text = formatDateTime(order.promised_at);
+    color = 'gray';
+  }
+  
+  return { overdue: isOverdue, isToday, isTomorrow, diffHours, diffDays, text, color, date: promised };
+}
+
 interface OrdersProps {
   onStatusChange?: (orderId: string, status: OrderStatus) => void;
   onNavigate?: (page: string) => void;
@@ -41,6 +96,9 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<OrderStatus | null>(null);
+  const [priorityFilter, setPriorityFilter] = useState<Priority | 'todas'>('todas');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [quickFilter, setQuickFilter] = useState<'todos'|'sin_pagar'|'sin_garantia'|'con_bloqueo'|'vencidas'>('todos');
 
   const goToPOS = () => { if (onNavigate) onNavigate('pos'); };
 
@@ -60,9 +118,66 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
 
   const ordersByStatus = useMemo(() => {
     const map: Record<OrderStatus, RepairOrder[]> = { por_revisar: [], en_reparacion: [], esperando_refaccion: [], listo: [], entregado: [] } as any;
-    orders.forEach((o) => { if (map[o.status]) map[o.status].push(o); });
+    let filtered = [...orders];
+
+    // Buscador por folio, cliente, telefono, marca, modelo, imei, problema
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter((o:any) => {
+        return (
+          (o.folio || '').toLowerCase().includes(q) ||
+          (o.customer_name || '').toLowerCase().includes(q) ||
+          (o.customer_phone || '').toLowerCase().includes(q) ||
+          (o.device_brand || '').toLowerCase().includes(q) ||
+          (o.device_model || '').toLowerCase().includes(q) ||
+          (o.device_type || '').toLowerCase().includes(q) ||
+          (o.problem_description || '').toLowerCase().includes(q) ||
+          (o.imei || '').toLowerCase().includes(q) ||
+          (o.technician_name || '').toLowerCase().includes(q)
+        );
+      });
+    }
+
+    // Filtro prioridad
+    if (priorityFilter !== 'todas') {
+      filtered = filtered.filter((o:any) => (o.priority || 'normal') === priorityFilter);
+    }
+
+    // Filtros rapidos pro
+    if (quickFilter !== 'todos') {
+      filtered = filtered.filter((o:any) => {
+        if (quickFilter === 'sin_pagar') {
+          const total = parseFloat(o.total || 0);
+          const adv = parseFloat(o.advance_payment || 0);
+          return total > 0 && (total - adv) > 0;
+        }
+        if (quickFilter === 'sin_garantia') {
+          return parseInt(o.warranty_value) === 0;
+        }
+        if (quickFilter === 'con_bloqueo') {
+          return o.lock_type && o.lock_type !== 'Sin bloqueo';
+        }
+        if (quickFilter === 'vencidas') {
+          if (!o.promised_at) return false;
+          const promised = new Date(o.promised_at);
+          const now = new Date();
+          return promised < now && !['listo','entregado'].includes(o.status);
+        }
+        return true;
+      });
+    }
+
+    // Sort by priority then promised_at
+    const sorted = [...filtered].sort((a:any,b:any) => {
+      const pa = PRIORITY_ORDER.indexOf((a.priority || 'normal') as Priority);
+      const pb = PRIORITY_ORDER.indexOf((b.priority || 'normal') as Priority);
+      if (pa !== pb) return pa - pb;
+      if (a.promised_at && b.promised_at) return new Date(a.promised_at).getTime() - new Date(b.promised_at).getTime();
+      return 0;
+    });
+    sorted.forEach((o) => { if (map[o.status]) map[o.status].push(o); });
     return map;
-  }, [orders]);
+  }, [orders, priorityFilter, searchQuery, quickFilter]);
 
   const handleDrop = async (status: OrderStatus) => {
     if (!draggingId) return;
@@ -82,7 +197,6 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
     try {
       const res = await orderAPI.create(formData);
       const order = res.data.order;
-      // Subir fotos de ingreso si hay
       if (fotosIngreso && fotosIngreso.length > 0) {
         for (const file of fotosIngreso) {
           const fd = new FormData();
@@ -155,9 +269,40 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-4 md:px-6 py-3 bg-white border-b border-ink-200 flex items-center justify-between">
-        <p className="text-sm text-ink-500">{orders.length} órdenes totales</p>
-        <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus className="w-4 h-4" /> Nueva orden</button>
+      <div className="px-4 md:px-6 py-3 bg-white border-b border-ink-200 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 flex-1 min-w-[280px]">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input value={searchQuery} onChange={(e)=>setSearchQuery(e.target.value)} placeholder="Buscar folio, cliente, teléfono, equipo, IMEI..." className="input pl-9 h-9 text-sm w-full bg-gray-50 border-gray-200" />
+              {searchQuery && <button onClick={()=>setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="w-4 h-4"/></button>}
+            </div>
+            <p className="text-xs text-gray-500 hidden md:block">{Object.values(ordersByStatus).flat().length} de {orders.length}</p>
+          </div>
+          <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus className="w-4 h-4" /> Nueva orden</button>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 bg-gray-100 rounded-full p-1">
+            <button onClick={() => setPriorityFilter('todas')} className={`px-3 py-1 rounded-full text-xs font-bold transition ${priorityFilter==='todas' ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}>Todas</button>
+            {(Object.keys(PRIORITY_CONFIG) as Priority[]).map(p => {
+              const cfg = PRIORITY_CONFIG[p];
+              return (
+                <button key={p} onClick={() => setPriorityFilter(p)} className={`px-2.5 py-1 rounded-full text-xs font-bold transition flex items-center gap-1 ${priorityFilter===p ? cfg.color + ' shadow' : 'text-gray-500 hover:text-gray-700'}`}>
+                  {cfg.emoji} {cfg.label}
+                </button>
+              )
+            })}
+          </div>
+          <div className="h-6 w-px bg-gray-300 hidden md:block" />
+          <div className="flex items-center gap-1 flex-wrap">
+            <button onClick={() => setQuickFilter('todos')} className={`px-3 py-1 rounded-full text-xs font-bold border transition ${quickFilter==='todos' ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200'}`}>Todos</button>
+            <button onClick={() => setQuickFilter('sin_pagar')} className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 transition ${quickFilter==='sin_pagar' ? 'bg-orange-600 text-white border-orange-600' : 'bg-orange-50 text-orange-700 border-orange-200'}`}>💰 Sin pagar</button>
+            <button onClick={() => setQuickFilter('sin_garantia')} className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 transition ${quickFilter==='sin_garantia' ? 'bg-gray-700 text-white border-gray-700' : 'bg-gray-100 text-gray-600 border-gray-200'}`}>🚫 Sin garantía</button>
+            <button onClick={() => setQuickFilter('con_bloqueo')} className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 transition ${quickFilter==='con_bloqueo' ? 'bg-amber-600 text-white border-amber-600' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>🔒 Con bloqueo</button>
+            <button onClick={() => setQuickFilter('vencidas')} className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1 transition ${quickFilter==='vencidas' ? 'bg-red-600 text-white border-red-600' : 'bg-red-50 text-red-700 border-red-200'}`}>⏰ Vencidas</button>
+          </div>
+        </div>
       </div>
       <div className="flex-1 overflow-auto p-4 md:p-6">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
@@ -212,19 +357,38 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
 function OrderCard({ order, dragging, onDragStart, onDragEnd, onClick }: any) {
   const warranty = getWarrantyInfo(order);
   const { resto, pagado } = getPagoInfo(order);
+  const promised = getPromisedInfo(order);
   const saldo = resto;
+  const isNoWarranty = (order as any).warranty_value === 0;
   return (
-    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick} className={`card p-3 cursor-pointer hover:shadow-md ${dragging? 'opacity-50 rotate-2 scale-95' : ''} ${pagado? 'bg-green-50/50 border-green-200' : ''} ${warranty &&!warranty.expired? 'border-l-4 border-l-green-500' : ''} ${warranty?.expired? 'border-l-4 border-l-red-400 opacity-75' : ''}`}>
+    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick} className={`card p-3 cursor-pointer hover:shadow-md ${dragging? 'opacity-50 rotate-2 scale-95' : ''} ${pagado? 'bg-green-50/50 border-green-200' : ''} ${promised?.overdue ? 'border-2 border-red-500 bg-red-50/80 shadow-red-100' : ''} ${!promised?.overdue && warranty &&!warranty.expired && !(warranty as any).noWarranty? 'border-l-4 border-l-green-500' : ''} ${warranty?.expired? 'border-l-4 border-l-red-400 opacity-75' : ''} ${isNoWarranty && !promised?.overdue ? 'border-l-4 border-l-gray-400' : ''}`}>
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-bold text-primary-600">{order.folio}</span>
         {pagado ? <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded font-bold flex items-center gap-1"><Check className="w-3 h-3" />Pagado</span> : <span className={`badge ${ORDER_STATUS_CONFIG[order.status as OrderStatus].color}`}>{ORDER_STATUS_CONFIG[order.status as OrderStatus].label}</span>}
       </div>
       <p className="text-sm font-semibold truncate">{order.customer_name}</p>
-      <p className="text-xs text-ink-500 mb-2 truncate">{order.device_brand} {order.device_model}</p>
+      <p className="text-xs text-ink-500 mb-1 truncate">{order.device_brand} {order.device_model}</p>
+      {(order as any).imei && <p className="text-[11px] font-mono text-gray-500 mb-2 truncate flex items-center gap-1"><Hash className="w-3 h-3"/> {(order as any).imei}</p>}
+      <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+        {(() => { const pri = getPriorityInfo(order); return (
+          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${pri.color} ${pri.ring} ${pri.label==='Urgente'?'animate-pulse':''}`}>
+            <span className={`w-2 h-2 rounded-full ${pri.dot}`} /> {pri.emoji} {pri.label}
+          </span>
+        )})()}
+        {promised && (
+          <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 border ${promised.overdue ? 'bg-red-100 text-red-700 border-red-300 animate-pulse' : promised.isToday ? 'bg-amber-100 text-amber-800 border-amber-300' : 'bg-purple-50 text-purple-700 border-purple-200'}`}>
+            <Calendar className="w-3 h-3" /> {promised.text}
+          </span>
+        )}
+      </div>
       <div className="flex items-center gap-2 mb-2 flex-wrap">
-        {order.lock_type && order.lock_type!== 'Sin bloqueo' && (<span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded flex items-center gap-1"><Lock className="w-3 h-3" /> {order.lock_type}</span>)}
+        {order.lock_type && order.lock_type!== 'Sin bloqueo' && (<span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded flex items-center gap-1"><Lock className="w-3 h-3" /> {order.lock_type}{order.lock_code ? ' ••••' : ''}</span>)}
         {order.advance_payment > 0 && !pagado && (<span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Anticipo: {formatCurrency(order.advance_payment)}</span>)}
-        {warranty && (<span className={`text-xs px-2 py-0.5 rounded flex items-center gap-1 ${warranty.expired? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}><Shield className="w-3 h-3" /> {warranty.expired? 'Vencida' : `${warranty.days}d`}</span>)}
+        {isNoWarranty ? (
+          <span className="text-xs px-2 py-0.5 rounded flex items-center gap-1 bg-gray-200 text-gray-600"><Ban className="w-3 h-3" /> Sin garantía</span>
+        ) : warranty && (
+          <span className={`text-xs px-2 py-0.5 rounded flex items-center gap-1 ${warranty.expired? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}><Shield className="w-3 h-3" /> {warranty.expired? 'Vencida' : `${warranty.days}d`}</span>
+        )}
       </div>
       <p className="text-xs text-ink-400 line-clamp-2 mb-2">{order.problem_description}</p>
       <div className="flex items-center justify-between pt-2 border-t">
@@ -242,9 +406,11 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onRemovePart, o
   const [activeTab, setActiveTab] = useState<'info' | 'diagnostic' | 'parts' | 'warranty' | 'evidencia'>('info');
   const [showPartPicker, setShowPartPicker] = useState(false);
   const [partQty, setPartQty] = useState(1);
+  const [showLockCode, setShowLockCode] = useState(false);
   const warrantyInfo = getWarrantyInfo(order);
   const { total, anticipo, resto, pagado } = getPagoInfo(order);
   const saldo = resto;
+  const isNoWarranty = (order as any).warranty_value === 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -255,8 +421,9 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onRemovePart, o
               <span className="text-lg font-bold text-primary-600">{order.folio}</span>
               <span className={`badge ${ORDER_STATUS_CONFIG[order.status as OrderStatus].color}`}>{ORDER_STATUS_CONFIG[order.status as OrderStatus].label}</span>
               {pagado && <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded font-bold flex items-center gap-1"><Check className="w-3 h-3" />Pagado</span>}
+              {isNoWarranty && <span className="text-xs bg-gray-200 text-gray-700 px-2 py-0.5 rounded font-bold flex items-center gap-1"><Ban className="w-3 h-3" />Sin garantía</span>}
             </div>
-            <p className="text-sm text-ink-500">{order.customer_name} · {order.device_brand} {order.device_model}</p>
+            <p className="text-sm text-ink-500">{order.customer_name} · {order.device_brand} {order.device_model} {(order as any).imei ? `· ${(order as any).imei}` : ''}</p>
           </div>
           <button onClick={onClose}><X className="w-5 h-5" /></button>
         </div>
@@ -281,9 +448,44 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onRemovePart, o
                 <div><p className="text-xs text-ink-400 uppercase font-semibold">Teléfono</p><p className="text-sm font-medium flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> {order.customer_phone || 'Sin teléfono'}</p></div>
                 <div><p className="text-xs text-ink-400 uppercase font-semibold">Dispositivo</p><p className="text-sm font-medium">{order.device_type}</p></div>
                 <div><p className="text-xs text-ink-400 uppercase font-semibold">Marca/Modelo</p><p className="text-sm font-medium">{order.device_brand} {order.device_model}</p></div>
-                <div><p className="text-xs text-ink-400 uppercase font-semibold">Tipo de bloqueo</p><p className="text-sm font-medium flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> {order.lock_type || 'Sin bloqueo'}</p></div>
-                <div><p className="text-xs text-ink-400 uppercase font-semibold">Garantía</p><p className="text-sm font-medium">{order.warranty_value} {order.warranty_unit}</p></div>
+                <div className="bg-gray-50 rounded-lg p-2 border">
+                  <p className="text-xs text-ink-400 uppercase font-semibold flex items-center gap-1"><Hash className="w-3 h-3"/> IMEI / Serie</p>
+                  <p className="text-sm font-mono font-bold">{(order as any).imei || 'Sin IMEI'}</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-2 border">
+                  <p className="text-xs text-ink-400 uppercase font-semibold flex items-center gap-1"><Smartphone className="w-3 h-3"/> Color / Capacidad</p>
+                  <p className="text-sm font-medium">{(order as any).device_color || 'No especificado'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-ink-400 uppercase font-semibold">Tipo de bloqueo</p>
+                  <p className="text-sm font-medium flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> {order.lock_type || 'Sin bloqueo'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-ink-400 uppercase font-semibold">Garantía</p>
+                  <p className={`text-sm font-medium ${isNoWarranty ? 'text-gray-500 font-bold' : ''}`}>{isNoWarranty ? 'Sin garantía (0 días)' : `${order.warranty_value} ${order.warranty_unit}`}</p>
+                </div>
               </div>
+
+              {order.promised_at && (() => { const p = getPromisedInfo(order); if (!p) return null; return (
+                <div className={`rounded-lg p-3 border-2 ${p.overdue ? 'bg-red-50 border-red-400' : 'bg-purple-50 border-purple-200'}`}>
+                  <p className={`text-xs uppercase font-bold flex items-center gap-1 ${p.overdue ? 'text-red-700' : 'text-purple-700'}`}><Calendar className="w-3.5 h-3.5"/> Fecha prometida</p>
+                  <p className={`text-sm font-bold mt-1 ${p.overdue ? 'text-red-800' : 'text-purple-800'}`}>{formatDateTime(order.promised_at)} · {p.text}</p>
+                  {p.overdue && <p className="text-xs text-red-600 mt-1 font-bold">⚠️ Esta orden está atrasada, priorizar!</p>}
+                </div>
+              ); })()}
+
+              {order.lock_code && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-amber-700 uppercase font-semibold flex items-center gap-1"><KeyRound className="w-3.5 h-3.5"/> Código / Contraseña de desbloqueo</p>
+                    <p className="text-sm font-mono font-bold mt-1">{showLockCode ? order.lock_code : '••••••••'}</p>
+                  </div>
+                  <button onClick={() => setShowLockCode(!showLockCode)} className="p-2 rounded-lg bg-white border hover:bg-amber-100">
+                    {showLockCode ? <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
+                  </button>
+                </div>
+              )}
+
               <div><p className="text-xs text-ink-400 uppercase font-semibold mb-1">Problema reportado</p><p className="text-sm bg-ink-50 rounded-lg p-3">{order.problem_description || 'Sin descripción'}</p></div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -358,17 +560,17 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onRemovePart, o
 
           {activeTab === 'warranty' && (
             <div className="space-y-4">
-              <div className="bg-ink-50 rounded-lg p-4">
+              <div className={`rounded-lg p-4 ${isNoWarranty ? 'bg-gray-100 border-2 border-gray-300' : 'bg-ink-50'}`}>
                 <div className="flex items-center gap-2 mb-3">
-                  <Shield className="w-5 h-5 text-primary-600" />
+                  {isNoWarranty ? <Ban className="w-5 h-5 text-gray-500" /> : <Shield className="w-5 h-5 text-primary-600" />}
                   <h3 className="font-bold">Garantía del servicio</h3>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-xs text-ink-400 uppercase font-semibold">Período</p>
-                    <p className="text-lg font-bold">{order.warranty_value || 10} {order.warranty_unit || 'Días'}</p>
+                    <p className={`text-lg font-bold ${isNoWarranty ? 'text-gray-600' : ''}`}>{isNoWarranty ? 'Sin garantía' : `${order.warranty_value} ${order.warranty_unit || 'Días'}`}</p>
                   </div>
-                  {order.delivered_at && (
+                  {order.delivered_at && !isNoWarranty && (
                     <div>
                       <p className="text-xs text-ink-400 uppercase font-semibold">Entregado</p>
                       <p className="text-sm font-medium">{formatDateTime(order.delivered_at)}</p>
@@ -378,10 +580,15 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onRemovePart, o
                     <p className="text-xs text-ink-400 uppercase font-semibold">Bloqueo</p>
                     <p className="text-sm font-medium">{order.lock_type}</p>
                   </div>
+                  {isNoWarranty && (
+                    <div className="col-span-2 bg-amber-50 border border-amber-200 rounded p-2 mt-2">
+                      <p className="text-xs text-amber-800 font-semibold">⚠️ Este servicio se entregó sin garantía. No aplica devolución por garantía.</p>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {order.warranty_ends_at ? (
+              {!isNoWarranty && order.warranty_ends_at ? (
                 <div className={`rounded-lg p-4 border-2 ${warrantyInfo?.expired? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
                   <div className="flex items-center gap-2 mb-2">
                     <Calendar className={`w-5 h-5 ${warrantyInfo?.expired? 'text-red-600' : 'text-green-600'}`} />
@@ -393,6 +600,12 @@ function OrderDetailModal({ order, onClose, products, onAddPart, onRemovePart, o
                   <p className={`text-xs mt-1 ${warrantyInfo?.expired? 'text-red-600' : 'text-green-600'}`}>
                     {warrantyInfo?.text}
                   </p>
+                </div>
+              ) : isNoWarranty ? (
+                <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
+                  <Ban className="w-10 h-10 text-gray-400 mx-auto mb-2" />
+                  <p className="font-bold text-gray-600">Servicio sin garantía</p>
+                  <p className="text-xs text-gray-500 mt-1">El cliente fue informado que este servicio no cuenta con garantía</p>
                 </div>
               ) : (
                 <p className="text-sm text-ink-400 text-center py-6 bg-ink-50 rounded-lg">
@@ -540,16 +753,27 @@ function EvidenciaTabContent({ ordenId }: { ordenId: string }) {
 }
 
 function CreateOrderModal({ onClose, onCreate }: any) {
+  const getDefaultPromised = () => { const d = new Date(); d.setDate(d.getDate()+2); d.setHours(18,0,0,0); const pad = (n:number)=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
   const [form, setForm] = useState({
     customer_name: '', customer_phone: '', device_type: 'Smartphone',
     device_brand: '', device_model: '', problem_description: '',
     total: 0, advance_payment: 0,
     payment_method_anticipo: 'efectivo' as 'efectivo' | 'tarjeta' | 'transferencia',
-    lock_type: 'Sin bloqueo', warranty_value: 10, warranty_unit: 'Días' as 'Días' | 'Meses'
+    lock_type: 'Sin bloqueo', lock_code: '',
+    warranty_value: 0,
+    warranty_unit: 'Días' as 'Días' | 'Meses',
+    promised_at: getDefaultPromised(),
+    priority: 'normal' as Priority,
+    imei: ''
   });
+  const [showCode, setShowCode] = useState(false);
   const [fotosIngreso, setFotosIngreso] = useState<File[]>([]);
   const [previewFotos, setPreviewFotos] = useState<string[]>([]);
+  const [warrantyText, setWarrantyText] = useState('0');
   const saldo = (form.total || 0) - (form.advance_payment || 0);
+  const isNoWarranty = form.warranty_value === 0 || warrantyText === '' || warrantyText === '0';
+
+  const needsCode = LOCK_TYPES_WITH_CODE.includes(form.lock_type);
 
   const handleFotos = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -564,6 +788,14 @@ function CreateOrderModal({ onClose, onCreate }: any) {
   const quitarFoto = (index: number) => {
     setFotosIngreso(prev => prev.filter((_, i) => i !== index));
     setPreviewFotos(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleLockTypeChange = (newType: string) => {
+    setForm(prev => ({
+      ...prev,
+      lock_type: newType,
+      lock_code: LOCK_TYPES_WITH_CODE.includes(newType) ? prev.lock_code : ''
+    }));
   };
 
   return (
@@ -583,6 +815,10 @@ function CreateOrderModal({ onClose, onCreate }: any) {
             <div><label className="label">Marca *</label><input className="input" value={form.device_brand} onChange={(e) => setForm({...form, device_brand: e.target.value })} /></div>
             <div><label className="label">Modelo</label><input className="input" value={form.device_model} onChange={(e) => setForm({...form, device_model: e.target.value })} /></div>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label flex items-center gap-1"><Hash className="w-3.5 h-3.5" /> IMEI / Serie</label><input className="input font-mono" placeholder="355123456789012" value={form.imei} onChange={(e) => setForm({...form, imei: e.target.value })} /></div>
+            <div><label className="label flex items-center gap-1"><Smartphone className="w-3.5 h-3.5" /> Color / Capacidad</label><input className="input" placeholder="Ej: 128GB Azul" value={(form as any).device_color || ''} onChange={(e) => setForm({...form, device_color: e.target.value } as any)} /></div>
+          </div>
           <div><label className="label">Problema reportado</label><textarea className="input min-h-[70px]" value={form.problem_description} onChange={(e) => setForm({...form, problem_description: e.target.value })} /></div>
 
           <div className="bg-ink-50 rounded-xl p-4 space-y-3 border-2 border-dashed border-primary-200">
@@ -596,37 +832,125 @@ function CreateOrderModal({ onClose, onCreate }: any) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="label flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> Tipo de bloqueo</label><select className="input" value={form.lock_type} onChange={(e) => setForm({...form, lock_type: e.target.value })}>{LOCK_TYPES.map(t => <option key={t}>{t}</option>)}</select></div>
-            <div className="grid grid-cols-2 gap-2">
-              <div><label className="label flex items-center gap-1"><Shield className="w-3.5 h-3.5" /> Garantía</label><input type="number" min="1" className="input" value={form.warranty_value} onChange={(e) => setForm({...form, warranty_value: parseInt(e.target.value) || 10 })} /></div>
-              <div><label className="label">Unidad</label><select className="input" value={form.warranty_unit} onChange={(e) => setForm({...form, warranty_unit: e.target.value as 'Días' | 'Meses' })}><option>Días</option><option>Meses</option></select></div>
+          <div className="bg-purple-50 rounded-xl p-4 space-y-2 border-2 border-dashed border-purple-200">
+            <label className="label flex items-center gap-1 font-bold text-purple-800"><Calendar className="w-3.5 h-3.5" /> Fecha y hora prometida al cliente *</label>
+            <input type="datetime-local" className="input border-purple-300 font-semibold" value={form.promised_at} onChange={(e) => setForm({...form, promised_at: e.target.value})} />
+            <p className="text-xs text-purple-600">Se pintará en rojo en el kanban si se pasa de esta fecha. Por defecto: +2 días a las 6pm</p>
+          </div>
+
+          <div className="space-y-2">
+            <label className="label font-bold flex items-center gap-1">🔥 Prioridad / Etiqueta</label>
+            <div className="grid grid-cols-5 gap-2">
+              {(Object.keys(PRIORITY_CONFIG) as Priority[]).map(p => {
+                const cfg = PRIORITY_CONFIG[p];
+                const active = form.priority === p;
+                return (
+                  <button key={p} type="button" onClick={() => setForm({...form, priority: p})} className={`px-2 py-2.5 rounded-xl text-xs font-bold border-2 transition-all flex flex-col items-center gap-1 ${active ? cfg.color + ' ring-2 ring-offset-1 ' + (p==='urgente'?'ring-red-300': p==='garantia'?'ring-purple-300':'ring-blue-200') + ' scale-105' : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                    <span className="text-base">{cfg.emoji}</span>
+                    <span>{cfg.label}</span>
+                  </button>
+                )
+              })}
             </div>
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> Tipo de bloqueo</label>
+              <select className="input" value={form.lock_type} onChange={(e) => handleLockTypeChange(e.target.value)}>{LOCK_TYPES.map(t => <option key={t}>{t}</option>)}</select>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="label flex items-center gap-1"><Shield className="w-3.5 h-3.5" /> Garantía</label>
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    placeholder="0"
+                    className={`input pr-8 ${isNoWarranty ? 'bg-gray-100 border-gray-300 text-gray-600 font-bold' : ''}`} 
+                    value={warrantyText} 
+                    onChange={(e) => {
+                      const raw = e.target.value.replace(/[^0-9]/g, '');
+                      if (raw === '') {
+                        setWarrantyText('');
+                        setForm(prev => ({ ...prev, warranty_value: 0 }));
+                        return;
+                      }
+                      let num = parseInt(raw);
+                      if (isNaN(num)) num = 0;
+                      if (num > 365) num = 365;
+                      // Evitar 02 visual
+                      setWarrantyText(String(num));
+                      setForm(prev => ({ ...prev, warranty_value: num }));
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    onBlur={() => {
+                      if (warrantyText === '') {
+                        setWarrantyText('0');
+                        setForm(prev => ({ ...prev, warranty_value: 0 }));
+                      }
+                    }}
+                  />
+                  {isNoWarranty && <Ban className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 text-gray-500" />}
+                </div>
+              </div>
+              <div><label className="label">Unidad</label><select className="input" value={form.warranty_unit} onChange={(e) => setForm({...form, warranty_unit: e.target.value as 'Días' | 'Meses' })} disabled={isNoWarranty}><option>Días</option><option>Meses</option></select></div>
+            </div>
+          </div>
+
+          {isNoWarranty && (
+            <div className="bg-gray-100 border-2 border-gray-300 rounded-xl p-3 flex items-center gap-2">
+              <Ban className="w-5 h-5 text-gray-600" />
+              <div>
+                <p className="text-sm font-bold text-gray-700">Servicio sin garantía</p>
+                <p className="text-xs text-gray-500">El cliente acepta que este servicio no tendrá garantía.</p>
+              </div>
+            </div>
+          )}
+
+          {needsCode && (
+            <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-4 space-y-2">
+              <label className="label flex items-center gap-1 font-bold text-amber-800"><KeyRound className="w-4 h-4" /> {form.lock_type === 'PIN' ? 'Código PIN' : 'Contraseña'} *</label>
+              <div className="relative">
+                <input type={showCode ? "text" : "password"} className="input pr-10 font-mono font-bold border-amber-300 bg-white" placeholder={form.lock_type === 'PIN' ? 'Ej: 1234' : 'Ej: MiClave123'} value={form.lock_code} onChange={(e) => setForm({...form, lock_code: e.target.value })} />
+                <button type="button" onClick={() => setShowCode(!showCode)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-amber-100">{showCode ? <EyeOff className="w-4 h-4 text-amber-700"/> : <Eye className="w-4 h-4 text-amber-700"/>}</button>
+              </div>
+            </div>
+          )}
+
           <div className="border-2 border-dashed border-blue-300 rounded-xl p-4 bg-blue-50/50 space-y-3">
-            <h4 className="font-bold text-sm flex items-center gap-2 text-blue-700"><Camera className="w-4 h-4"/> Evidencia de Ingreso (recomendado)</h4>
-            <p className="text-xs text-blue-600">Toma fotos del equipo al recibirlo para evitar reclamos</p>
+            <h4 className="font-bold text-sm flex items-center gap-2 text-blue-700"><Camera className="w-4 h-4"/> Evidencia de Ingreso</h4>
             <label className="flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-3 rounded-lg cursor-pointer font-semibold text-sm hover:bg-blue-700 w-full">
-              <Upload className="w-4 h-4"/> {fotosIngreso.length>0 ? `${fotosIngreso.length} fotos seleccionadas` : 'Tomar / Seleccionar fotos de ingreso'}
-              <input type="file" multiple accept="image/*" capture="environment" hidden onChange={handleFotos} />
+              <Upload className="w-4 h-4"/> {fotosIngreso.length>0 ? `${fotosIngreso.length} fotos` : 'Tomar / Seleccionar fotos'}
+              <input type="file" multiple accept="image/*" capture="environment" hidden onChange={(e) => {
+                const files = Array.from(e.target.files || []);
+                setFotosIngreso(prev => [...prev, ...files]);
+                files.forEach(file => {
+                  const reader = new FileReader();
+                  reader.onload = (ev) => setPreviewFotos(prev => [...prev, ev.target?.result as string]);
+                  reader.readAsDataURL(file);
+                });
+              }} />
             </label>
             {previewFotos.length>0 && (
               <div className="grid grid-cols-3 gap-2">
                 {previewFotos.map((src, i) => (
                   <div key={i} className="relative">
                     <img src={src} className="w-full h-20 object-cover rounded-lg border" />
-                    <button type="button" onClick={()=>quitarFoto(i)} className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"><X size={10}/></button>
+                    <button type="button" onClick={() => {
+                      setFotosIngreso(prev => prev.filter((_, idx) => idx !== i));
+                      setPreviewFotos(prev => prev.filter((_, idx) => idx !== i));
+                    }} className="absolute -top-1 -right-1 bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"><X size={10}/></button>
                   </div>
                 ))}
               </div>
             )}
           </div>
-
         </div>
         <div className="p-6 border-t flex gap-3 bg-white">
           <button onClick={onClose} className="btn-secondary flex-1">Cancelar</button>
-          <button onClick={() => onCreate(form, fotosIngreso)} disabled={!form.customer_name ||!form.device_brand} className="btn-primary flex-1">
+          <button onClick={() => onCreate(form, fotosIngreso)} disabled={!form.customer_name ||!form.device_brand || (needsCode && !form.lock_code)} className="btn-primary flex-1">
             <Check className="w-4 h-4" /> {fotosIngreso.length>0 ? `Crear con ${fotosIngreso.length} fotos` : form.advance_payment>0? `Crear y cobrar ${formatCurrency(form.advance_payment)} en POS` : 'Crear orden'}
           </button>
         </div>

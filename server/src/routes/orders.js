@@ -22,6 +22,28 @@ router.post('/', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   try {
+    const lockType = req.body.lock_type || 'Sin bloqueo';
+    const lockCode = req.body.lock_code?.trim() || null;
+    if (['PIN','Contraseña'].includes(lockType) && !lockCode) {
+      return res.status(400).json({ error: `El ${lockType} es obligatorio. Debes ingresar el código.` });
+    }
+
+    let warrantyVal = req.body.warranty_value;
+    if (warrantyVal === undefined || warrantyVal === null || warrantyVal === '') {
+      warrantyVal = 10;
+    } else {
+      warrantyVal = parseInt(warrantyVal);
+      if (isNaN(warrantyVal)) warrantyVal = 10;
+    }
+    if (warrantyVal < 0) warrantyVal = 0;
+    if (warrantyVal > 365) warrantyVal = 365;
+
+    // ===== PROMISED_AT + PRIORITY =====
+    let promisedAt = req.body.promised_at ? new Date(req.body.promised_at) : null;
+    if (promisedAt && isNaN(promisedAt.getTime())) promisedAt = null;
+    let priority = req.body.priority || 'normal';
+    if (!['baja','normal','alta','urgente','garantia'].includes(priority)) priority = 'normal';
+
     const folio = `RP-${Date.now().toString().slice(-6)}`;
     const order = await RepairOrder.create({
       id: uuidv4(), tenant_id: tenantId, folio,
@@ -38,9 +60,14 @@ router.post('/', authorize(['owner', 'technician']), async (req, res) => {
       cost_labor: req.body.cost_labor || req.body.total || 0,
       total: req.body.total || 0,
       advance_payment: req.body.advance_payment || 0,
-      lock_type: req.body.lock_type || 'Sin bloqueo',
-      warranty_value: req.body.warranty_value || 10,
+      lock_type: lockType,
+      lock_code: lockCode,
+      warranty_value: warrantyVal,
       warranty_unit: req.body.warranty_unit || 'Días',
+      promised_at: promisedAt,
+      priority: priority,
+      imei: req.body.imei || null,
+      device_color: req.body.device_color || null,
     });
     res.status(201).json({ order });
   } catch (err) {
@@ -54,8 +81,29 @@ router.put('/:id', authorize(['owner', 'technician']), async (req, res) => {
   if (!tenantId) return;
   const order = await RepairOrder.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
   if (!order) return res.status(404).json({ error: 'Orden no encontrada' });
-  const fields = ['customer_name','customer_phone','device_type','device_brand','device_model','problem_description','diagnostic','private_notes','cost_labor','total','advance_payment','lock_type','warranty_value','warranty_unit'];
-  fields.forEach((f) => { if (req.body[f]!== undefined) order[f] = req.body[f]; });
+  const fields = ['customer_name','customer_phone','device_type','device_brand','device_model','problem_description','diagnostic','private_notes','cost_labor','total','advance_payment','lock_type','lock_code','warranty_value','warranty_unit','promised_at','priority','imei','device_color'];
+  fields.forEach((f) => { 
+    if (req.body[f]!== undefined) {
+      if (f === 'warranty_value') {
+        let v = parseInt(req.body[f]);
+        if (!isNaN(v) && v >= 0) order[f] = v;
+      } else if (f === 'promised_at') {
+        if (req.body[f] === null || req.body[f] === '') {
+          order[f] = null;
+        } else {
+          const d = new Date(req.body[f]);
+          if (!isNaN(d.getTime())) order[f] = d;
+        }
+      } else if (f === 'priority') {
+        if (['baja','normal','alta','urgente','garantia'].includes(req.body[f])) order[f] = req.body[f];
+      } else {
+        order[f] = req.body[f];
+      }
+    }
+  });
+  if (req.body.lock_type && !['PIN','Contraseña'].includes(req.body.lock_type)) {
+    if (req.body.lock_code === undefined) order.lock_code = null;
+  }
   await order.save();
   res.json({ order });
 });
@@ -127,11 +175,14 @@ router.put('/:id/status', authorize(['owner', 'technician']), async (req, res) =
     if (req.body.status === 'listo' &&!order.ready_at) order.ready_at = new Date();
     if (req.body.status === 'entregado' &&!order.delivered_at) {
       order.delivered_at = new Date();
-      if (order.warranty_value && order.warranty_unit) {
+      const wVal = parseInt(order.warranty_value);
+      if (wVal > 0 && order.warranty_unit) {
         const entrega = new Date(order.delivered_at);
-        if (order.warranty_unit === 'Días') entrega.setDate(entrega.getDate() + parseInt(order.warranty_value));
-        else entrega.setMonth(entrega.getMonth() + parseInt(order.warranty_value));
+        if (order.warranty_unit === 'Días') entrega.setDate(entrega.getDate() + wVal);
+        else entrega.setMonth(entrega.getMonth() + wVal);
         order.warranty_ends_at = entrega;
+      } else {
+        order.warranty_ends_at = null;
       }
     }
     await order.save({ transaction: t });
@@ -150,7 +201,6 @@ router.post('/:id/parts', authorize(['owner', 'technician']), async (req, res) =
   const t = await sequelize.transaction();
   try {
     product.stock -= quantity; await product.save({ transaction: t });
-    // Registrar movimiento inventario
     await InventoryMovement.create({
       id: uuidv4(), tenant_id: tenantId, product_id: product.id,
       type: 'out', quantity, reason: `Uso en orden ${order.folio}`,
@@ -165,7 +215,6 @@ router.post('/:id/parts', authorize(['owner', 'technician']), async (req, res) =
   } catch (err) { await t.rollback(); res.status(500).json({ error: err.message }); }
 });
 
-// NUEVO: QUITAR REFACCION Y REGRESAR STOCK
 router.delete('/:id/parts/:partId', authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;

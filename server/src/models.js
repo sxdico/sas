@@ -95,7 +95,7 @@ export const InventoryMovement = sequelize.define('InventoryMovement', {
   user_name: { type: DataTypes.STRING(150) },
 }, { tableName: 'inventory_movements', createdAt: 'created_at', updatedAt: false });
 
-// ===== REPAIR ORDERS =====
+// ===== FIX: Agregar en RepairOrder en models.js =====
 export const RepairOrder = sequelize.define('RepairOrder', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
@@ -124,12 +124,30 @@ export const RepairOrder = sequelize.define('RepairOrder', {
     type: DataTypes.ENUM('Sin bloqueo','Patrón','PIN','Contraseña','Cuenta Google','iCloud','MDM','Otro'),
     defaultValue: 'Sin bloqueo'
   },
+  lock_code: {
+    type: DataTypes.STRING(100),
+    allowNull: true,
+    defaultValue: null,
+    comment: 'PIN o Contraseña del equipo - solo visible para técnicos'
+  },
   warranty_value: { type: DataTypes.INTEGER, defaultValue: 10 },
   warranty_unit: { 
     type: DataTypes.ENUM('Días','Meses'),
     defaultValue: 'Días'
   },
   warranty_ends_at: { type: DataTypes.DATE, allowNull: true },
+  // ===== NUEVO CAMPO #2 =====
+  promised_at: { 
+    type: DataTypes.DATE, 
+    allowNull: true,
+    comment: 'Fecha y hora prometida al cliente' 
+  },
+  priority: {
+    type: DataTypes.ENUM('baja','normal','alta','urgente','garantia'),
+    defaultValue: 'normal',
+  },
+  imei: { type: DataTypes.STRING(30), allowNull: true },
+  device_color: { type: DataTypes.STRING(50), allowNull: true },
 }, { tableName: 'repair_orders', updatedAt: 'updated_at', createdAt: 'created_at' });
 
 // ===== ORDER PARTS =====

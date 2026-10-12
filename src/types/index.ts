@@ -58,6 +58,7 @@ export interface Product {
 }
 
 export type OrderStatus = 'por_revisar' | 'en_reparacion' | 'esperando_refaccion' | 'listo' | 'entregado';
+export type Priority = 'baja' | 'normal' | 'alta' | 'urgente' | 'garantia';
 
 export interface RepairOrder {
   id: string;
@@ -81,12 +82,16 @@ export interface RepairOrder {
   ready_at: string | null;
   delivered_at: string | null;
   parts_used: PartUsed[];
-  // NUEVOS CAMPOS
   advance_payment: number;
   lock_type: 'Sin bloqueo' | 'Patrón' | 'PIN' | 'Contraseña' | 'Cuenta Google' | 'iCloud' | 'MDM' | 'Otro';
   warranty_value: number;
   warranty_unit: 'Días' | 'Meses';
   warranty_ends_at: string | null;
+  promised_at: string | null;
+  priority: Priority;
+  imei?: string | null;
+  device_color?: string | null;
+  lock_code?: string | null;
 }
 
 export interface PartUsed {

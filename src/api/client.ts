@@ -104,7 +104,7 @@ export const notificationAPI = {
   markRead: (id: string) => api.put(`/notifications/${id}/read`),
 };
 
-// ===== NUEVO: EVIDENCIA =====
+// ===== EVIDENCIA - FIX 404: soporta ?orden_id y /:id + / y /upload =====
 export const evidenciaAPI = {
   list: (orden_id: string) => api.get(`/evidencias?orden_id=${orden_id}`),
   upload: (formData: FormData) => api.post('/evidencias', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),

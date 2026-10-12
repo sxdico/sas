@@ -38,7 +38,7 @@ export const ORDER_STATUS_CONFIG: Record<OrderStatus, { label: string; color: st
   en_reparacion: { label: 'En Reparación', color: 'bg-primary-100 text-primary-700', dot: 'bg-primary-500' },
   esperando_refaccion: { label: 'Esperando Refacción', color: 'bg-warning-100 text-warning-700', dot: 'bg-warning-500' },
   listo: { label: 'Listo', color: 'bg-success-100 text-success-700', dot: 'bg-success-500' },
-  entregado: { label: 'Entregado', color: 'bg-ink-200 text-ink-600', dot: 'bg-ink-400' },
+  entregado: { label: 'Entregado', color: 'bg-blue-100 text-slate-600 border border-blue-200', dot: 'bg-slate-500' },
 };
 
 export const PAYMENT_METHOD_LABELS: Record<string, string> = {
