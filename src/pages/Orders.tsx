@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { orderAPI, productAPI, evidenciaAPI } from '@/api/client'
+import { LicenseExpiredBanner } from '@/components/LicenseBanner'
+import { useAuth } from '@/context/AuthContext'
 import { ORDER_STATUS_CONFIG, formatCurrency, formatDateTime } from '@/utils/permissions';
 import type { RepairOrder, OrderStatus, Product } from '@/types';
 import {
@@ -89,6 +91,7 @@ interface OrdersProps {
 }
 
 export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
+  const { license, isReadOnly } = useAuth();
   const [orders, setOrders] = useState<RepairOrder[]>([]);
   const [apiProducts, setApiProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -180,6 +183,7 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
   }, [orders, priorityFilter, searchQuery, quickFilter]);
 
   const handleDrop = async (status: OrderStatus) => {
+    if (isReadOnly) { alert('Licencia vencida - Solo lectura. Contacta a soporte para renovar.'); return; }
     if (!draggingId) return;
     const order = orders.find((o) => o.id === draggingId);
     if (!order) return;
@@ -194,6 +198,7 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
   };
 
   const handleCreateOrder = async (formData: any, fotosIngreso: File[] = []) => {
+    if (isReadOnly) { alert('Licencia vencida - No puedes crear órdenes.'); return; }
     try {
       const res = await orderAPI.create(formData);
       const order = res.data.order;
@@ -269,6 +274,7 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
 
   return (
     <div className="flex flex-col h-full">
+      {license && <LicenseExpiredBanner license={license} />}
       <div className="px-4 md:px-6 py-3 bg-white border-b border-ink-200 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 flex-1 min-w-[280px]">
@@ -279,7 +285,7 @@ export default function Orders({ onStatusChange, onNavigate }: OrdersProps) {
             </div>
             <p className="text-xs text-gray-500 hidden md:block">{Object.values(ordersByStatus).flat().length} de {orders.length}</p>
           </div>
-          <button onClick={() => setShowCreate(true)} className="btn-primary"><Plus className="w-4 h-4" /> Nueva orden</button>
+          <button onClick={() => setShowCreate(true)} disabled={isReadOnly} className={`btn-primary ${isReadOnly ? 'opacity-50 cursor-not-allowed' : ''}`}><Plus className="w-4 h-4" /> {isReadOnly ? 'Solo lectura' : 'Nueva orden'}</button>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -361,7 +367,7 @@ function OrderCard({ order, dragging, onDragStart, onDragEnd, onClick }: any) {
   const saldo = resto;
   const isNoWarranty = (order as any).warranty_value === 0;
   return (
-    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick} className={`card p-3 cursor-pointer hover:shadow-md ${dragging? 'opacity-50 rotate-2 scale-95' : ''} ${pagado? 'bg-green-50/50 border-green-200' : ''} ${promised?.overdue ? 'border-2 border-red-500 bg-red-50/80 shadow-red-100' : ''} ${!promised?.overdue && warranty &&!warranty.expired && !(warranty as any).noWarranty? 'border-l-4 border-l-green-500' : ''} ${warranty?.expired? 'border-l-4 border-l-red-400 opacity-75' : ''} ${isNoWarranty && !promised?.overdue ? 'border-l-4 border-l-gray-400' : ''}`}>
+    <div draggable={!isReadOnly} onDragStart={isReadOnly ? undefined : onDragStart} onDragEnd={onDragEnd} onClick={onClick} className={`card p-3 cursor-pointer hover:shadow-md ${dragging? 'opacity-50 rotate-2 scale-95' : ''} ${pagado? 'bg-green-50/50 border-green-200' : ''} ${promised?.overdue ? 'border-2 border-red-500 bg-red-50/80 shadow-red-100' : ''} ${!promised?.overdue && warranty &&!warranty.expired && !(warranty as any).noWarranty? 'border-l-4 border-l-green-500' : ''} ${warranty?.expired? 'border-l-4 border-l-red-400 opacity-75' : ''} ${isNoWarranty && !promised?.overdue ? 'border-l-4 border-l-gray-400' : ''}`}>
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-bold text-primary-600">{order.folio}</span>
         {pagado ? <span className="text-xs bg-green-600 text-white px-2 py-0.5 rounded font-bold flex items-center gap-1"><Check className="w-3 h-3" />Pagado</span> : <span className={`badge ${ORDER_STATUS_CONFIG[order.status as OrderStatus].color}`}>{ORDER_STATUS_CONFIG[order.status as OrderStatus].label}</span>}

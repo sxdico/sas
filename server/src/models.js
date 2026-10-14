@@ -1,3 +1,4 @@
+
 import { Sequelize, DataTypes, UUIDV4 } from 'sequelize';
 
 const sequelize = new Sequelize(
@@ -12,7 +13,6 @@ const sequelize = new Sequelize(
   }
 );
 
-// ===== TENANTS =====
 export const PLAN_CONFIG = {
   trial: { label: 'Prueba 7 días', price: 0, max_users: 2, days: 7, color: 'gray' },
   basic: { label: 'Básico $299', price: 299, max_users: 4, days: 30, color: 'blue' },
@@ -27,10 +27,7 @@ export const Tenant = sequelize.define('Tenant', {
   email: { type: DataTypes.STRING(200), allowNull: false, unique: true },
   phone: { type: DataTypes.STRING(20), allowNull: false },
   status: { type: DataTypes.ENUM('active', 'suspended', 'expired'), defaultValue: 'active' },
-  plan: { 
-    type: DataTypes.ENUM('trial','basic','pro','premium','starter','enterprise'), 
-    defaultValue: 'basic' 
-  },
+  plan: { type: DataTypes.ENUM('trial','basic','pro','premium','starter','enterprise'), defaultValue: 'basic' },
   max_users: { type: DataTypes.INTEGER, defaultValue: 4 },
   plan_price: { type: DataTypes.DECIMAL(10,2), defaultValue: 299 },
   plan_started_at: { type: DataTypes.DATE, allowNull: true },
@@ -39,7 +36,6 @@ export const Tenant = sequelize.define('Tenant', {
   notes: { type: DataTypes.TEXT, allowNull: true },
 }, { tableName: 'tenants', updatedAt: 'updated_at', createdAt: 'created_at' });
 
-// ===== USERS =====
 export const User = sequelize.define('User', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: true },
@@ -51,7 +47,6 @@ export const User = sequelize.define('User', {
   active: { type: DataTypes.BOOLEAN, defaultValue: true },
 }, { tableName: 'users', updatedAt: 'updated_at', createdAt: 'created_at' });
 
-// ===== CATEGORIES =====
 export const Category = sequelize.define('Category', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
@@ -60,7 +55,6 @@ export const Category = sequelize.define('Category', {
   icon: { type: DataTypes.STRING(50), defaultValue: 'Package' },
 }, { tableName: 'categories', createdAt: 'created_at', updatedAt: false });
 
-// ===== SUPPLIERS =====
 export const Supplier = sequelize.define('Supplier', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
@@ -69,7 +63,6 @@ export const Supplier = sequelize.define('Supplier', {
   email: { type: DataTypes.STRING(200) },
 }, { tableName: 'suppliers', createdAt: 'created_at', updatedAt: false });
 
-// ===== PRODUCTS =====
 export const Product = sequelize.define('Product', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
@@ -88,7 +81,6 @@ export const Product = sequelize.define('Product', {
   hotkey: { type: DataTypes.STRING(5) },
 }, { tableName: 'products', updatedAt: 'updated_at', createdAt: 'created_at' });
 
-// ===== CUSTOMERS =====
 export const Customer = sequelize.define('Customer', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
@@ -99,7 +91,6 @@ export const Customer = sequelize.define('Customer', {
   total_purchases: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
 }, { tableName: 'customers', createdAt: 'created_at', updatedAt: false });
 
-// ===== INVENTORY MOVEMENTS =====
 export const InventoryMovement = sequelize.define('InventoryMovement', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
@@ -109,9 +100,11 @@ export const InventoryMovement = sequelize.define('InventoryMovement', {
   reason: { type: DataTypes.STRING(255) },
   user_id: { type: DataTypes.UUID },
   user_name: { type: DataTypes.STRING(150) },
+  product_name: { type: DataTypes.STRING(200), allowNull: true },
+  reference_id: { type: DataTypes.STRING(36), allowNull: true },
+  reference_type: { type: DataTypes.STRING(20), allowNull: true },
 }, { tableName: 'inventory_movements', createdAt: 'created_at', updatedAt: false });
 
-// ===== FIX: Agregar en RepairOrder en models.js =====
 export const RepairOrder = sequelize.define('RepairOrder', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
@@ -136,6 +129,7 @@ export const RepairOrder = sequelize.define('RepairOrder', {
   ready_at: { type: DataTypes.DATE, allowNull: true },
   delivered_at: { type: DataTypes.DATE, allowNull: true },
   advance_payment: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
+  payment_method_anticipo: { type: DataTypes.STRING(20), defaultValue: 'efectivo' },
   lock_type: { 
     type: DataTypes.ENUM('Sin bloqueo','Patrón','PIN','Contraseña','Cuenta Google','iCloud','MDM','Otro'),
     defaultValue: 'Sin bloqueo'
@@ -144,23 +138,17 @@ export const RepairOrder = sequelize.define('RepairOrder', {
     type: DataTypes.STRING(100),
     allowNull: true,
     defaultValue: null,
-    comment: 'PIN o Contraseña del equipo - solo visible para técnicos'
   },
   warranty_value: { type: DataTypes.INTEGER, defaultValue: 10 },
-  warranty_unit: { 
-    type: DataTypes.ENUM('Días','Meses'),
-    defaultValue: 'Días'
-  },
+  warranty_unit: { type: DataTypes.ENUM('Días','Meses'), defaultValue: 'Días' },
   warranty_ends_at: { type: DataTypes.DATE, allowNull: true },
-  // ===== NUEVO CAMPO #2 =====
-  promised_at: { 
-    type: DataTypes.DATE, 
-    allowNull: true,
-    comment: 'Fecha y hora prometida al cliente' 
-  },
+  promised_at: { type: DataTypes.DATE, allowNull: true },
+  // ===== CAMPOS QUE FALTABAN - RESTAURADOS =====
+  priority: { type: DataTypes.ENUM('baja','normal','alta','urgente','garantia'), defaultValue: 'normal' },
+  imei: { type: DataTypes.STRING(30), allowNull: true },
+  device_color: { type: DataTypes.STRING(100), allowNull: true },
 }, { tableName: 'repair_orders', updatedAt: 'updated_at', createdAt: 'created_at' });
 
-// ===== ORDER PARTS =====
 export const OrderPart = sequelize.define('OrderPart', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
@@ -171,7 +159,6 @@ export const OrderPart = sequelize.define('OrderPart', {
   unit_cost: { type: DataTypes.DECIMAL(10, 2), allowNull: false },
 }, { tableName: 'order_parts', createdAt: 'created_at', updatedAt: false });
 
-// ===== SALES - FIX: cash_session_id va AQUÍ, no en SaleItem =====
 export const Sale = sequelize.define('Sale', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
@@ -190,7 +177,6 @@ export const Sale = sequelize.define('Sale', {
   status: { type: DataTypes.ENUM('completed', 'on_hold', 'credit'), defaultValue: 'completed' },
 }, { tableName: 'sales', createdAt: 'created_at', updatedAt: false });
 
-// ===== CASH SESSIONS - FIX con STRING(36) y sin FK conflictiva =====
 export const CashSession = sequelize.define('CashSession', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.STRING(36), allowNull: false },
@@ -215,7 +201,6 @@ export const CashSession = sequelize.define('CashSession', {
   notes: { type: DataTypes.TEXT, allowNull: true },
 }, { tableName: 'cash_sessions', createdAt: 'created_at', updatedAt: 'updated_at' });
 
-// ===== SALE ITEMS - LIMPIO sin cash_session_id =====
 export const SaleItem = sequelize.define('SaleItem', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
@@ -227,7 +212,18 @@ export const SaleItem = sequelize.define('SaleItem', {
   discount: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
 }, { tableName: 'sale_items', updatedAt: false, createdAt: false });
 
-// ===== NOTIFICATIONS =====
+export const Evidencia = sequelize.define('Evidencia', {
+  id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
+  tenant_id: { type: DataTypes.UUID, allowNull: false },
+  orden_id: { type: DataTypes.UUID, allowNull: false },
+  tipo: { type: DataTypes.ENUM('ingreso','durante','salida'), defaultValue: 'ingreso' },
+  url: { type: DataTypes.STRING(500), allowNull: false },
+  thumbnail_url: { type: DataTypes.STRING(500), allowNull: true },
+  nota: { type: DataTypes.STRING(255), allowNull: true },
+  user_id: { type: DataTypes.UUID, allowNull: true },
+  user_name: { type: DataTypes.STRING(150), allowNull: true },
+}, { tableName: 'evidencias', createdAt: 'created_at', updatedAt: 'updated_at' });
+
 export const Notification = sequelize.define('Notification', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   tenant_id: { type: DataTypes.UUID, allowNull: false },
@@ -238,46 +234,40 @@ export const Notification = sequelize.define('Notification', {
   for_roles: { type: DataTypes.STRING(200), defaultValue: 'owner,secretary,cashier' },
 }, { tableName: 'notifications', createdAt: 'created_at', updatedAt: false });
 
-// ===== ASSOCIATIONS =====
 Tenant.hasMany(User, { foreignKey: 'tenant_id' });
 User.belongsTo(Tenant, { foreignKey: 'tenant_id' });
-
 Tenant.hasMany(Category, { foreignKey: 'tenant_id' });
 Category.belongsTo(Tenant, { foreignKey: 'tenant_id' });
-
 Tenant.hasMany(Product, { foreignKey: 'tenant_id' });
 Product.belongsTo(Tenant, { foreignKey: 'tenant_id' });
 Product.belongsTo(Category, { foreignKey: 'category_id' });
-
 Tenant.hasMany(Customer, { foreignKey: 'tenant_id' });
 Customer.belongsTo(Tenant, { foreignKey: 'tenant_id' });
-
 Tenant.hasMany(InventoryMovement, { foreignKey: 'tenant_id' });
 InventoryMovement.belongsTo(Tenant, { foreignKey: 'tenant_id' });
 InventoryMovement.belongsTo(Product, { foreignKey: 'product_id' });
-
 Tenant.hasMany(RepairOrder, { foreignKey: 'tenant_id' });
 RepairOrder.belongsTo(Tenant, { foreignKey: 'tenant_id' });
 RepairOrder.belongsTo(User, { foreignKey: 'technician_id', as: 'technician' });
-RepairOrder.hasMany(OrderPart, { foreignKey: 'order_id' });
+RepairOrder.hasMany(OrderPart, { foreignKey: 'order_id', as: 'OrderParts' });
 OrderPart.belongsTo(RepairOrder, { foreignKey: 'order_id' });
 OrderPart.belongsTo(Product, { foreignKey: 'product_id' });
-
 Tenant.hasMany(Sale, { foreignKey: 'tenant_id' });
 Sale.belongsTo(Tenant, { foreignKey: 'tenant_id' });
 Sale.belongsTo(Customer, { foreignKey: 'customer_id' });
 Sale.hasMany(SaleItem, { foreignKey: 'sale_id' });
 SaleItem.belongsTo(Sale, { foreignKey: 'sale_id' });
 SaleItem.belongsTo(Product, { foreignKey: 'product_id' });
-
 Tenant.hasMany(Notification, { foreignKey: 'tenant_id' });
 Notification.belongsTo(Tenant, { foreignKey: 'tenant_id' });
-
-// FIX: CashSession sin constraints para evitar Error 1215/121 en MySQL/Laragon
 Tenant.hasMany(CashSession, { foreignKey: 'tenant_id', constraints: false });
 CashSession.belongsTo(Tenant, { foreignKey: 'tenant_id', constraints: false });
 CashSession.hasMany(Sale, { foreignKey: 'cash_session_id', constraints: false });
 Sale.belongsTo(CashSession, { foreignKey: 'cash_session_id', constraints: false });
+Tenant.hasMany(Evidencia, { foreignKey: 'tenant_id' });
+Evidencia.belongsTo(Tenant, { foreignKey: 'tenant_id' });
+RepairOrder.hasMany(Evidencia, { foreignKey: 'orden_id', as: 'evidencias' });
+Evidencia.belongsTo(RepairOrder, { foreignKey: 'orden_id' });
 
 export { sequelize };
 export default sequelize;

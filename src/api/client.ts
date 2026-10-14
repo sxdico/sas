@@ -21,7 +21,12 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('fixpro_token');
       localStorage.removeItem('fixpro_user');
+      localStorage.removeItem('fixpro_license');
       window.location.href = '/';
+    }
+    if (error.response?.data?.code === 'LICENSE_EXPIRED') {
+      // No cerramos sesión, solo mostramos error, el banner ya está
+      console.warn('Licencia vencida - solo lectura');
     }
     return Promise.reject(error);
   }
@@ -105,7 +110,6 @@ export const notificationAPI = {
   markRead: (id: string) => api.put(`/notifications/${id}/read`),
 };
 
-// ===== EVIDENCIA - FIX 404: soporta ?orden_id y /:id + / y /upload =====
 export const evidenciaAPI = {
   list: (orden_id: string) => api.get(`/evidencias?orden_id=${orden_id}`),
   upload: (formData: FormData) => api.post('/evidencias', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),

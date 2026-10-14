@@ -2,10 +2,22 @@ import { createContext, useContext, useState, useCallback, useEffect, type React
 import type { User, Role } from '@/types';
 import { authAPI } from '@/api/client';
 
+interface LicenseInfo {
+  expired?: boolean;
+  expiring?: boolean;
+  days_overdue?: number;
+  days_left?: number;
+  expired_at?: string;
+  message?: string;
+  plan?: string;
+}
+
 interface AuthContextType {
   user: User | null;
+  license: LicenseInfo | null;
+  isReadOnly: boolean;
   loading: boolean;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; license?: LicenseInfo }>;
   loginAs: (role: Role) => void;
   logout: () => void;
   tenantName: string | null;
@@ -13,7 +25,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Demo fallback users — used when backend is not running
 const DEMO_USERS: Record<Role, User> = {
   super_admin: { id: 'u0', tenant_id: null, name: 'Admin Global', email: 'admin@fixpro.com', role: 'super_admin', active: true },
   owner: { id: 'u1', tenant_id: 't1', name: 'Carlos Ramírez', email: 'carlos@talleramirez.com', phone: '5512345678', role: 'owner', active: true },
@@ -28,27 +39,30 @@ const DEMO_TENANT_NAMES: Record<string, string> = {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [license, setLicense] = useState<LicenseInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore session from localStorage on mount
   useEffect(() => {
     const token = localStorage.getItem('fixpro_token');
     const storedUser = localStorage.getItem('fixpro_user');
+    const storedLicense = localStorage.getItem('fixpro_license');
     if (token && storedUser) {
       try {
         setUser(JSON.parse(storedUser));
+        if (storedLicense) setLicense(JSON.parse(storedLicense));
       } catch {
         localStorage.removeItem('fixpro_token');
         localStorage.removeItem('fixpro_user');
+        localStorage.removeItem('fixpro_license');
       }
     }
     setLoading(false);
   }, []);
 
-  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
+  const login = useCallback(async (email: string, password: string) => {
     try {
       const res = await authAPI.login(email, password);
-      const { token, user: apiUser } = res.data;
+      const { token, user: apiUser, license: lic } = res.data;
       const fullUser: User = {
         id: apiUser.id,
         tenant_id: apiUser.tenant_id,
@@ -59,19 +73,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       localStorage.setItem('fixpro_token', token);
       localStorage.setItem('fixpro_user', JSON.stringify(fullUser));
+      if (lic) {
+        localStorage.setItem('fixpro_license', JSON.stringify(lic));
+        setLicense(lic);
+      } else {
+        localStorage.removeItem('fixpro_license');
+        setLicense(null);
+      }
       setUser(fullUser);
-      return true;
-    } catch {
-      // Fallback to demo mode if backend is not available
+      return { success: true, license: lic };
+    } catch (err: any) {
+      const msg = err.response?.data?.error || 'Credenciales inválidas';
+      // Fallback demo
       const demoUser = Object.values(DEMO_USERS).find(
         (u) => u.email.toLowerCase() === email.toLowerCase()
       );
       if (demoUser) {
         localStorage.setItem('fixpro_user', JSON.stringify(demoUser));
         setUser(demoUser);
-        return true;
+        return { success: true };
       }
-      return false;
+      return { success: false, error: msg };
     }
   }, []);
 
@@ -79,20 +101,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const demoUser = DEMO_USERS[role];
     if (demoUser) {
       localStorage.setItem('fixpro_user', JSON.stringify(demoUser));
+      localStorage.removeItem('fixpro_license');
       setUser(demoUser);
+      setLicense(null);
     }
   }, []);
 
   const logout = useCallback(() => {
     localStorage.removeItem('fixpro_token');
     localStorage.removeItem('fixpro_user');
+    localStorage.removeItem('fixpro_license');
     setUser(null);
+    setLicense(null);
   }, []);
 
   const tenantName = user?.tenant_id ? DEMO_TENANT_NAMES[user.tenant_id] ?? null : null;
+  const isReadOnly = license?.expired === true;
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginAs, logout, tenantName }}>
+    <AuthContext.Provider value={{ user, license, isReadOnly, loading, login, loginAs, logout, tenantName }}>
       {children}
     </AuthContext.Provider>
   );
