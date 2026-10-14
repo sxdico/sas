@@ -12,7 +12,7 @@ import axios from 'axios';
 
 // Intentamos usar saleAPI si existe, si no hacemos fetch directo
 // tu backend ya tiene /api/sales
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '');
 
 export default function Dashboard() {
   const { user } = useAuth();
