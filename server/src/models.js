@@ -214,7 +214,7 @@ export const SaleItem = sequelize.define('SaleItem', {
 
 export const Evidencia = sequelize.define('Evidencia', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
-  tenant_id: { type: DataTypes.UUID, allowNull: false },
+  tenant_id: { type: DataTypes.STRING(36), allowNull: false },
   orden_id: { type: DataTypes.UUID, allowNull: false },
   tipo: { type: DataTypes.ENUM('ingreso','durante','salida'), defaultValue: 'ingreso' },
   url: { type: DataTypes.STRING(500), allowNull: false },
@@ -264,10 +264,10 @@ Tenant.hasMany(CashSession, { foreignKey: 'tenant_id', constraints: false });
 CashSession.belongsTo(Tenant, { foreignKey: 'tenant_id', constraints: false });
 CashSession.hasMany(Sale, { foreignKey: 'cash_session_id', constraints: false });
 Sale.belongsTo(CashSession, { foreignKey: 'cash_session_id', constraints: false });
-Tenant.hasMany(Evidencia, { foreignKey: 'tenant_id' });
-Evidencia.belongsTo(Tenant, { foreignKey: 'tenant_id' });
-RepairOrder.hasMany(Evidencia, { foreignKey: 'orden_id', as: 'evidencias' });
-Evidencia.belongsTo(RepairOrder, { foreignKey: 'orden_id' });
+Tenant.hasMany(Evidencia, { foreignKey: 'tenant_id', constraints: false });
+Evidencia.belongsTo(Tenant, { foreignKey: 'tenant_id', constraints: false });
+RepairOrder.hasMany(Evidencia, { foreignKey: 'orden_id', as: 'evidencias', constraints: false });
+Evidencia.belongsTo(RepairOrder, { foreignKey: 'orden_id', constraints: false });
 
 export { sequelize };
 export default sequelize;
