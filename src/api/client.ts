@@ -42,6 +42,7 @@ export const tenantAPI = {
   delete: (id: string) => api.delete(`/tenants/${id}`),
   listUsers: (tenantId: string) => api.get(`/tenants/${tenantId}/users`),
   resetUserPassword: (userId: string, newPassword?: string) => api.put(`/tenants/users/${userId}/reset-password`, { newPassword }),
+  renewPlan: (id: string, data: { plan: string; add_days: number; custom_price?: number }) => api.put(`/tenants/${id}/renew`, data),
 };
 
 export const userAPI = {

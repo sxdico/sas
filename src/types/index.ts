@@ -10,15 +10,25 @@ export interface User {
   active: boolean;
 }
 
+export type PlanType = 'trial' | 'basic' | 'pro' | 'premium' | 'starter' | 'enterprise';
+
 export interface Tenant {
   id: string;
   name_taller: string;
   name_dueno: string;
   email: string;
   phone: string;
-  status: 'active' | 'suspended';
+  status: 'active' | 'suspended' | 'expired';
   created_at: string;
-  plan: 'starter' | 'pro' | 'enterprise';
+  plan: PlanType;
+  max_users: number;
+  plan_price: number;
+  plan_started_at: string | null;
+  plan_expires_at: string | null;
+  billing_cycle: 'monthly' | 'yearly';
+  days_left?: number;
+  is_expired?: boolean;
+  is_expiring?: boolean;
   user_count: number;
   order_count: number;
 }

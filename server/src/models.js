@@ -13,14 +13,30 @@ const sequelize = new Sequelize(
 );
 
 // ===== TENANTS =====
+export const PLAN_CONFIG = {
+  trial: { label: 'Prueba 7 días', price: 0, max_users: 2, days: 7, color: 'gray' },
+  basic: { label: 'Básico $299', price: 299, max_users: 4, days: 30, color: 'blue' },
+  pro: { label: 'Pro $399', price: 399, max_users: 10, days: 30, color: 'orange' },
+  premium: { label: 'Premium $499', price: 499, max_users: 9999, days: 30, color: 'purple' },
+};
+
 export const Tenant = sequelize.define('Tenant', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
   name_taller: { type: DataTypes.STRING(200), allowNull: false },
   name_dueno: { type: DataTypes.STRING(150), allowNull: false },
   email: { type: DataTypes.STRING(200), allowNull: false, unique: true },
   phone: { type: DataTypes.STRING(20), allowNull: false },
-  status: { type: DataTypes.ENUM('active', 'suspended'), defaultValue: 'active' },
-  plan: { type: DataTypes.ENUM('starter', 'pro', 'enterprise'), defaultValue: 'starter' },
+  status: { type: DataTypes.ENUM('active', 'suspended', 'expired'), defaultValue: 'active' },
+  plan: { 
+    type: DataTypes.ENUM('trial','basic','pro','premium','starter','enterprise'), 
+    defaultValue: 'basic' 
+  },
+  max_users: { type: DataTypes.INTEGER, defaultValue: 4 },
+  plan_price: { type: DataTypes.DECIMAL(10,2), defaultValue: 299 },
+  plan_started_at: { type: DataTypes.DATE, allowNull: true },
+  plan_expires_at: { type: DataTypes.DATE, allowNull: true },
+  billing_cycle: { type: DataTypes.ENUM('monthly','yearly'), defaultValue: 'monthly' },
+  notes: { type: DataTypes.TEXT, allowNull: true },
 }, { tableName: 'tenants', updatedAt: 'updated_at', createdAt: 'created_at' });
 
 // ===== USERS =====
@@ -142,12 +158,6 @@ export const RepairOrder = sequelize.define('RepairOrder', {
     allowNull: true,
     comment: 'Fecha y hora prometida al cliente' 
   },
-  priority: {
-    type: DataTypes.ENUM('baja','normal','alta','urgente','garantia'),
-    defaultValue: 'normal',
-  },
-  imei: { type: DataTypes.STRING(30), allowNull: true },
-  device_color: { type: DataTypes.STRING(50), allowNull: true },
 }, { tableName: 'repair_orders', updatedAt: 'updated_at', createdAt: 'created_at' });
 
 // ===== ORDER PARTS =====
