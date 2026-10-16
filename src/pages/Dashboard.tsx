@@ -1,6 +1,7 @@
+
 import { useMemo, useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { orderAPI, productAPI } from '@/api/client';
+import { orderAPI, productAPI, saleAPI } from '@/api/client';
 import { formatCurrency, formatDateTime, PAYMENT_METHOD_LABELS, ORDER_STATUS_CONFIG } from '@/utils/permissions';
 import type { OrderStatus } from '@/types';
 import {
@@ -8,11 +9,6 @@ import {
   Package, Users, AlertTriangle, ShoppingCart,
   ArrowUpRight, CheckCircle2, BadgeCheck,
 } from 'lucide-react';
-import axios from 'axios';
-
-// Intentamos usar saleAPI si existe, si no hacemos fetch directo
-// tu backend ya tiene /api/sales
-const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '');
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -25,12 +21,13 @@ export default function Dashboard() {
   const loadData = async () => {
     setLoading(true);
     try {
+      // Usamos el mismo cliente autenticado para todo - evita 401
       const [ordersRes, productsRes, salesRes] = await Promise.all([
-        orderAPI.list().catch(() => ({ data: { orders: [] } })),
-        productAPI.list().catch(() => ({ data: { products: [] } })),
-        axios.get(`${API_URL}/api/sales`, {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        }).catch(() => ({ data: { sales: [] } }))
+        orderAPI.list().catch(() => ({ data: { orders: [] } } as any)),
+        productAPI.list().catch(() => ({ data: { products: [] } } as any)),
+        // saleAPI ya usa el interceptor con el token correcto (fixpro_token, etc)
+        // Si no existe o da 401, devolvemos vacío sin crashear
+        (saleAPI?.list ? saleAPI.list().catch(() => ({ data: { sales: [] } } as any)) : Promise.resolve({ data: { sales: [] } } as any))
       ]);
 
       // orders
