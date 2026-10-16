@@ -22,33 +22,34 @@ const __dirname = path.dirname(__filename);
 const app = express();
 
 // CORS FIX: permite localhost + producción playit.plus
+
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:3000',
-  'https://web.fixpro.playit.plus',
-  'https://fixpro.playit.plus',
-  'https://www.fixpro.playit.plus',
-  'https://api.fixpro.playit.plus'
+  'https://ifixsoft.online',
+  'https://www.ifixsoft.online',
 ];
 
-// Si tienes CLIENT_URL en .env con varias URLs separadas por coma, las agregamos también
-const envOrigins = process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',').map(s => s.trim()) : [];
-const allAllowed = [...allowedOrigins, ...envOrigins];
+const envOrigins = process.env.CLIENT_URL
+  ? process.env.CLIENT_URL.split(',').map((s) => s.trim())
+  : [];
+
+const allAllowed = [...new Set([...allowedOrigins, ...envOrigins])];
 
 app.use(cors({
-  origin: function(origin, callback){
-    if(!origin) return callback(null, true); // Postman, curl
-    if(allAllowed.includes(origin) || origin.includes('playit.plus') || origin.includes('localhost')){
+  origin(origin, callback) {
+    if (!origin || allAllowed.includes(origin)) {
       return callback(null, true);
     }
-    // En desarrollo dejamos abierto para no bloquear
-    return callback(null, true);
+
+    return callback(new Error(`Origen no permitido por CORS: ${origin}`));
   },
   credentials: true,
-  methods: ['GET','POST','PUT','DELETE','OPTIONS','PATCH'],
-  allowedHeaders: ['Content-Type','Authorization','X-Requested-With']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
+
 app.use(express.json());
 
 // Static para fotos - compatible Windows/Linux - DEBE IR ANTES DE AUTH
