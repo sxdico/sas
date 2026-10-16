@@ -1,7 +1,8 @@
-fixpro.playit.plus {
-    reverse_proxy 127.0.0.1:3001
+
+ifixsoft.online {
+    reverse_proxy 127.0.0.1:5173
 }
 
-web.fixpro.playit.plus {
-    reverse_proxy 127.0.0.1:5173
+api.ifixsoft.online {
+    reverse_proxy 127.0.0.1:3001
 }
