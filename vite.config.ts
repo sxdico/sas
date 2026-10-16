@@ -2,10 +2,11 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
-// Detecta si estamos usando playit por variable de entorno
-// npm run dev          -> modo LOCALHOST con HMR (reload activo)
-// PLAYIT=1 npm run dev -> modo WEB.FIXPRO sin HMR (sin errores)
+// PLAYIT=1 -> modo túnel con HMR activado
+// sin variable -> modo localhost normal
 const isPlayit = process.env.PLAYIT === '1' || process.env.PLAYIT === 'true';
+// Opcional: puedes pasar tu dominio para que no falle
+const playitHost = process.env.PLAYIT_HOST || '';
 
 export default defineConfig({
   plugins: [react()],
@@ -15,11 +16,13 @@ export default defineConfig({
     port: 5173,
     allowedHosts: true,
     
-    // AQUÍ ESTÁ LA MAGIA:
-    // Si es localhost -> HMR activado con reload
-    // Si es web.fixpro (PLAYIT=1) -> HMR desactivado para evitar el loop
     hmr: isPlayit 
-      ? false 
+      ? {
+          // Si pones tu dominio, lo usa. Si no, usa el host actual (funciona igual)
+          host: playitHost || undefined,
+          protocol: 'wss',
+          clientPort: 443,
+        }
       : {
           host: '127.0.0.1',
           port: 5173,
