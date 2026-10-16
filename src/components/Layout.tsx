@@ -38,7 +38,7 @@ export default function Layout({ currentPage, onNavigate, children, notification
   if (!user) return null;
 
   const navItems = ALL_NAV_ITEMS.filter((item) => can(user.role, item.permission));
-  const currentLabel = navItems.find((n) => n.page === currentPage)?.label ?? 'FixPro';
+  const currentLabel = navItems.find((n) => n.page === currentPage)?.label ?? 'iFixSoft';
 
   const sidebar = (
     <div className="flex flex-col h-full bg-ink-900 w-64 shrink-0">
