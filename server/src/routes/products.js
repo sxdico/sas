@@ -1,11 +1,35 @@
+
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { Product, Category, InventoryMovement } from '../models.js';
-import { authMiddleware, authorize, requireTenantId } from '../middleware/auth.js';
+import { authMiddleware, authorize, requireTenantId, blockIfLicenseExpired } from '../middleware/auth.js';
 
 const router = Router();
 
 router.use(authMiddleware);
+
+// Helper seguro para crear movimiento - no crashea si faltan columnas product_name/reference_id
+async function safeCreateMovement(data) {
+  try {
+    return await InventoryMovement.create(data);
+  } catch (err) {
+    // Si falla por columna faltante, intenta sin product_name/reference_id
+    if (err.message && err.message.includes('Unknown column')) {
+      console.warn('[MOVEMENT] Columna faltante, reintentando sin campos extra:', err.message);
+      const { product_name, reference_id, reference_type, ...rest } = data;
+      try {
+        return await InventoryMovement.create(rest);
+      } catch (e2) {
+        console.warn('[MOVEMENT] Falló segundo intento:', e2.message);
+        return null;
+      }
+    }
+    console.warn('[MOVEMENT] Error creando movimiento:', err.message);
+    return null;
+  }
+}
+
+
 
 // 1. CATEGORIAS - SIEMPRE PRIMERO
 router.get('/categories/all', authorize(['owner', 'technician', 'secretary', 'secretaria', 'cashier', 'cajera', 'receptionist', 'admin']), async (req, res) => {
@@ -20,11 +44,23 @@ router.get('/movements/all', authorize(['owner', 'technician', 'secretary', 'sec
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   try {
-    const movements = await InventoryMovement.findAll({
-      where: { tenant_id: tenantId },
-      order: [['created_at', 'DESC']],
-      limit: 500,
-    });
+    let movements;
+    try {
+      movements = await InventoryMovement.findAll({
+        where: { tenant_id: tenantId },
+        order: [['created_at', 'DESC']],
+        limit: 500,
+      });
+    } catch (err) {
+      // Si falta product_name, intenta seleccionar solo columnas que existen
+      console.warn('[MOVEMENT] findAll falló, reintentando sin product_name:', err.message);
+      movements = await InventoryMovement.findAll({
+        where: { tenant_id: tenantId },
+        attributes: { exclude: ['product_name', 'reference_id', 'reference_type'] },
+        order: [['created_at', 'DESC']],
+        limit: 500,
+      });
+    }
     // Enriquecer nombre si falta
     const enriched = await Promise.all(movements.map(async (m) => {
       const json = m.toJSON();
@@ -74,15 +110,32 @@ router.get('/low-stock', authorize(['owner', 'technician', 'secretary', 'secreta
 router.get('/:id/movements', authorize(['owner', 'technician', 'secretary', 'secretaria', 'cashier', 'admin']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
-  const movements = await InventoryMovement.findAll({
-    where: { product_id: req.params.id, tenant_id: tenantId },
-    order: [['created_at', 'DESC']],
-  });
+  let movements;
+  try {
+    movements = await InventoryMovement.findAll({
+      where: { product_id: req.params.id, tenant_id: tenantId },
+      order: [['created_at', 'DESC']],
+    });
+  } catch (err) {
+    movements = await InventoryMovement.findAll({
+      where: { product_id: req.params.id, tenant_id: tenantId },
+      attributes: { exclude: ['product_name', 'reference_id', 'reference_type'] },
+      order: [['created_at', 'DESC']],
+    });
+  }
   res.json({ movements });
 });
 
+// ============ BLOQUEO LICENCIA VENCIDA - SOLO LECTURA ============
+// GETs ya pasaron, ahora bloqueamos escritura si licencia vencida
+const blockWriteIfExpired = (req, res, next) => {
+  // Si quieres que categorías también se bloqueen, deja este middleware aquí
+  // Si no, muévelo después de categorías
+  return blockIfLicenseExpired(req, res, next);
+};
+
 // ============ CATEGORIAS CRUD ============
-router.post('/categories', authorize(['owner', 'technician']), async (req, res) => {
+router.post('/categories', blockWriteIfExpired, , authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const { name, color, icon } = req.body;
@@ -94,7 +147,7 @@ router.post('/categories', authorize(['owner', 'technician']), async (req, res) 
   res.status(201).json({ category });
 });
 
-router.put('/categories/:id', authorize(['owner', 'technician']), async (req, res) => {
+router.put('/categories/:id', blockWriteIfExpired, authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const category = await Category.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
@@ -107,7 +160,7 @@ router.put('/categories/:id', authorize(['owner', 'technician']), async (req, re
   res.json({ category });
 });
 
-router.delete('/categories/:id', authorize(['owner', 'technician']), async (req, res) => {
+router.delete('/categories/:id', blockWriteIfExpired, authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const category = await Category.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
@@ -128,8 +181,8 @@ router.get('/:id', authorize(['owner', 'technician', 'secretary', 'secretaria', 
   res.json({ product });
 });
 
-// POST producto
-router.post('/', authorize(['owner', 'technician']), async (req, res) => {
+// POST producto - bloqueado si licencia vencida
+router.post('/', blockWriteIfExpired, authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   let { sku, barcode, name, description, category_id, cost_price, sale_price, wholesale_price, stock, min_stock } = req.body;
@@ -144,7 +197,7 @@ router.post('/', authorize(['owner', 'technician']), async (req, res) => {
   });
 
   if (stock && stock > 0) {
-    await InventoryMovement.create({
+    await safeCreateMovement({
       id: uuidv4(), tenant_id: tenantId, product_id: product.id,
       product_name: product.name,
       type: 'in', quantity: stock, reason: 'Stock inicial',
@@ -154,7 +207,7 @@ router.post('/', authorize(['owner', 'technician']), async (req, res) => {
   res.status(201).json({ product });
 });
 
-router.put('/:id', authorize(['owner', 'technician']), async (req, res) => {
+router.put('/:id', blockWriteIfExpired, authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const product = await Product.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
@@ -166,7 +219,7 @@ router.put('/:id', authorize(['owner', 'technician']), async (req, res) => {
   res.json({ product });
 });
 
-router.put('/:id/stock', authorize(['owner', 'technician']), async (req, res) => {
+router.put('/:id/stock', blockWriteIfExpired, authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const { quantity, reason, type = 'adjustment' } = req.body;
@@ -177,7 +230,7 @@ router.put('/:id/stock', authorize(['owner', 'technician']), async (req, res) =>
   if (product.stock < 0) product.stock = 0;
   await product.save();
 
-  await InventoryMovement.create({
+  await safeCreateMovement({
     id: uuidv4(),
     tenant_id: tenantId,
     product_id: product.id,
@@ -192,7 +245,7 @@ router.put('/:id/stock', authorize(['owner', 'technician']), async (req, res) =>
   res.json({ product });
 });
 
-router.delete('/:id', authorize(['owner']), async (req, res) => {
+router.delete('/:id', blockWriteIfExpired, authorize(['owner']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const product = await Product.findOne({ where: { id: req.params.id, tenant_id: tenantId } });
