@@ -1,12 +1,13 @@
+
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
-// PLAYIT=1 -> modo túnel con HMR activado
-// sin variable -> modo localhost normal
-const isPlayit = process.env.PLAYIT === '1' || process.env.PLAYIT === 'true';
-// Opcional: puedes pasar tu dominio para que no falle
-const playitHost = process.env.PLAYIT_HOST || '';
+const isPlayit =
+  process.env.PLAYIT === '1' ||
+  process.env.PLAYIT === 'true';
+
+const playitHost = process.env.PLAYIT_HOST || 'ifixsoft.online';
 
 export default defineConfig({
   plugins: [react()],
@@ -14,12 +15,12 @@ export default defineConfig({
   server: {
     host: isPlayit ? '0.0.0.0' : '127.0.0.1',
     port: 5173,
+    strictPort: true,
     allowedHosts: true,
-    
-    hmr: isPlayit 
+
+    hmr: isPlayit
       ? {
-          // Si pones tu dominio, lo usa. Si no, usa el host actual (funciona igual)
-          host: playitHost || undefined,
+          host: playitHost,
           protocol: 'wss',
           clientPort: 443,
         }
