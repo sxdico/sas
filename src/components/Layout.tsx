@@ -38,7 +38,7 @@ export default function Layout({ currentPage, onNavigate, children, notification
   if (!user) return null;
 
   const navItems = ALL_NAV_ITEMS.filter((item) => can(user.role, item.permission));
-  const currentLabel = navItems.find((n) => n.page === currentPage)?.label ?? 'iFixSoft';
+  const currentLabel = navItems.find((n) => n.page === currentPage)?.label ?? 'FixPro';
 
   const sidebar = (
     <div className="flex flex-col h-full bg-ink-900 w-64 shrink-0">
@@ -47,7 +47,7 @@ export default function Layout({ currentPage, onNavigate, children, notification
           <Wrench className="w-5 h-5 text-white" />
         </div>
         <div className="min-w-0">
-          <p className="text-white font-bold text-sm">FixPro</p>
+          <p className="text-white font-bold text-sm">iFixSoft</p>
           <p className="text-ink-400 text-xs truncate">{user.role === 'super_admin' ? 'Panel Global' : tenantName}</p>
         </div>
       </div>
