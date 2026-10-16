@@ -135,7 +135,7 @@ const blockWriteIfExpired = (req, res, next) => {
 };
 
 // ============ CATEGORIAS CRUD ============
-router.post('/categories', blockWriteIfExpired, , authorize(['owner', 'technician']), async (req, res) => {
+router.post('/categories', blockWriteIfExpired, authorize(['owner', 'technician']), async (req, res) => {
   const tenantId = requireTenantId(req, res);
   if (!tenantId) return;
   const { name, color, icon } = req.body;
