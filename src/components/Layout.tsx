@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext';
 import { can, ROLE_LABELS, ROLE_COLORS } from '@/utils/permissions';
 import {
   Wrench, LayoutDashboard, ShoppingCart, ClipboardList, Package,
-  Users, Building2, LogOut, Bell, Menu, TrendingUp
+  Users, Building2, LogOut, Bell, Menu, TrendingUp, Megaphone
 } from 'lucide-react';
 
 interface NavItem {
@@ -14,6 +14,7 @@ interface NavItem {
 }
 
 const ALL_NAV_ITEMS: NavItem[] = [
+  { label: 'Broadcasts', icon: Megaphone, page: 'broadcasts', permission: 'tenants' },
   { label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard', permission: 'reports' },
   { label: 'POS', icon: ShoppingCart, page: 'pos', permission: 'pos' },
   { label: 'Órdenes', icon: ClipboardList, page: 'orders', permission: 'ordersView' },
