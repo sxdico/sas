@@ -10,6 +10,7 @@ import Orders from '@/pages/Orders';
 import Deliveries from '@/pages/Deliveries';
 import Inventory from '@/pages/Inventory';
 import Tenants from '@/pages/Tenants';
+import Broadcasts from '@/pages/Broadcasts';
 import Dashboard from '@/pages/Dashboard';
 import Reports from '@/pages/Reports';
 import Users from '@/pages/Users';
@@ -75,6 +76,7 @@ function AppContent() {
       case 'deliveries': return <Deliveries onDeliver={handleDeliver} />;
       case 'inventory': return <Inventory />;
       case 'tenants': return <Tenants />;
+      case 'broadcasts': return <Broadcasts />;
       case 'reports': return <Reports />;
       case 'users': return <Users />;
       default: return <Dashboard />;

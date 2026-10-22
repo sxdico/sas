@@ -15,6 +15,8 @@ import deliveryRoutes from './routes/deliveries.js';
 import notificationRoutes from './routes/notifications.js';
 import cashRoutes from './routes/cash.js';
 import evidenciasRoutes from './routes/evidence.js';
+import broadcastRoutes from './routes/broadcasts.js';
+
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,6 +58,7 @@ app.use(express.json());
 app.use('/uploads', express.static(path.join(__dirname, '..', '..', 'uploads')));
 
 // Routes
+
 app.use('/api/auth', authRoutes);
 app.use('/api/tenants', tenantRoutes);
 app.use('/api/users', userRoutes);
@@ -66,6 +69,7 @@ app.use('/api/deliveries', deliveryRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/cash', cashRoutes);
 app.use('/api/evidencias', evidenciasRoutes);
+app.use('/api/broadcasts', broadcastRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

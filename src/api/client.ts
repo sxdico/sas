@@ -57,6 +57,12 @@ export const userAPI = {
   toggleActive: (id: string) => api.put(`/users/${id}/toggle-active`),
   resetPassword: (id: string, newPassword?: string) => api.put(`/users/${id}/reset-password`, { newPassword }),
 };
+export const broadcastAPI = {
+  list: () => api.get('/broadcasts'),
+  preview: (params: any) => api.get('/broadcasts/preview', { params }),
+  create: (data: any) => api.post('/broadcasts', data),
+  delete: (id: string) => api.delete(`/broadcasts/${id}`),
+};
 
 export const productAPI = {
   list: (params?: any) => api.get('/products', { params }),

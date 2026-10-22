@@ -234,6 +234,20 @@ export const Notification = sequelize.define('Notification', {
   for_roles: { type: DataTypes.STRING(200), defaultValue: 'owner,secretary,cashier' },
 }, { tableName: 'notifications', createdAt: 'created_at', updatedAt: false });
 
+export const Broadcast = sequelize.define('Broadcast', {
+  id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
+  title: { type: DataTypes.STRING(200), allowNull: false },
+  message: { type: DataTypes.TEXT, allowNull: false },
+  type: { type: DataTypes.ENUM('info','success','warning','error'), defaultValue: 'info' },
+  target_plans: { type: DataTypes.STRING(200), defaultValue: 'all' },
+  target_roles: { type: DataTypes.STRING(200), defaultValue: 'owner,secretary,cashier,technician' },
+  tenant_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+  notification_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+  expires_at: { type: DataTypes.DATE, allowNull: true },
+  created_by: { type: DataTypes.UUID, allowNull: true },
+  created_by_name: { type: DataTypes.STRING(150), allowNull: true },
+}, { tableName: 'broadcasts', createdAt: 'created_at', updatedAt: 'updated_at' });
+
 Tenant.hasMany(User, { foreignKey: 'tenant_id' });
 User.belongsTo(Tenant, { foreignKey: 'tenant_id' });
 Tenant.hasMany(Category, { foreignKey: 'tenant_id' });
