@@ -1,7 +1,7 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { can } from '@/utils/permissions';
-import { notifications as initialNotifications } from '@/data/mock';
+import { notificationAPI } from '@/api/client';
 import type { AppNotification, SaleItem, PaymentMethod, OrderStatus } from '@/types';
 import Layout from '@/components/Layout';
 import Login from '@/pages/Login';
@@ -19,14 +19,48 @@ import { Bell, X, Check, AlertTriangle, Info } from 'lucide-react';
 function AppContent() {
   const { user } = useAuth();
   const [currentPage, setCurrentPage] = useState('dashboard');
-  const [notifications, setNotifications] = useState<AppNotification[]>(initialNotifications);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  // FIX: Cargar notificaciones REALES del backend cada vez que cambia usuario o cada 30s
+  const loadNotifications = useCallback(async () => {
+    if (!user) return;
+    // super_admin no tiene notificaciones de tenant, no pedir
+    if (user.role === 'super_admin') {
+      setNotifications([]);
+      return;
+    }
+    try {
+      const res = await notificationAPI.list();
+      const data = res.data.notifications || res.data || [];
+      // Normaliza formato backend -> AppNotification
+      const mapped: AppNotification[] = data.map((n: any) => ({
+        id: n.id,
+        tenant_id: n.tenant_id,
+        title: n.title,
+        message: n.message,
+        type: n.type,
+        read: n.read,
+        created_at: n.created_at,
+        for_roles: n.for_roles,
+      }));
+      setNotifications(mapped);
+    } catch (e) {
+      console.error('Error cargando notificaciones reales', e);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadNotifications();
+    const interval = setInterval(loadNotifications, 30000); // 30s poll para ver broadcasts nuevos
+    return () => clearInterval(interval);
+  }, [loadNotifications]);
 
   const userNotifications = useMemo(() => {
     if (!user) return [];
+    if (user.role === 'super_admin') return [];
     return notifications.filter((n) =>
-      n.tenant_id === user.tenant_id &&
-      n.for_roles.includes(user.role)
+      n.for_roles.split(',').map((r: string) => r.trim()).includes(user.role)
     );
   }, [notifications, user]);
 
@@ -42,28 +76,31 @@ function AppContent() {
     setCurrentPage(page);
   }, [user]);
 
-  const handleSaleComplete = useCallback((_items: SaleItem[], _total: number, _method: PaymentMethod, _customerName: string | null) => {
-    // In production this would POST /api/sales and create inventory_movement 'out'
-  }, []);
+  const handleSaleComplete = useCallback((_items: SaleItem[], _total: number, _method: PaymentMethod, _customerName: string | null) => {}, []);
 
-  const handleOrderStatusChange = useCallback((_orderId: string, newStatus: OrderStatus) => {
-    if (newStatus === 'listo' && user) {
-      setNotifications((prev) => [...prev, {
-        id: `n${Date.now()}`, tenant_id: user.tenant_id!,
-        title: 'Orden lista para entrega',
-        message: 'Una orden ha sido marcada como lista.',
-        type: 'success', read: false, created_at: new Date().toISOString(),
-        for_roles: ['owner', 'secretary', 'cashier'],
-      }]);
-    }
-  }, [user]);
+  const handleOrderStatusChange = useCallback(async (_orderId: string, newStatus: OrderStatus) => {
+    // Recargar notificaciones cuando cambia estado (si tu backend crea notif)
+    loadNotifications();
+  }, [loadNotifications]);
 
-  const handleDeliver = useCallback((_orderId: string) => {
-    // In production this would PUT /api/orders/:id/status { status: 'entregado' }
-  }, []);
+  const handleDeliver = useCallback((_orderId: string) => {}, []);
 
-  const markNotificationRead = (id: string) => {
+  const markNotificationRead = async (id: string) => {
+    // Optimistic UI
     setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
+    try {
+      await notificationAPI.markRead(id);
+    } catch (e) {
+      console.error('Error marcando leída', e);
+    }
+  };
+
+  const markAllRead = async () => {
+    const unread = userNotifications.filter(n => !n.read);
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    for (const n of unread) {
+      try { await notificationAPI.markRead(n.id); } catch {}
+    }
   };
 
   if (!user) return <Login />;
@@ -94,7 +131,7 @@ function AppContent() {
         {renderPage()}
       </Layout>
 
-      {/* Notifications panel */}
+      {/* Notifications panel - REAL */}
       {showNotifications && (
         <div className="fixed inset-0 z-50 flex justify-end animate-fade-in" onClick={() => setShowNotifications(false)}>
           <div className="absolute inset-0 bg-black/30" />
@@ -102,34 +139,44 @@ function AppContent() {
             <div className="px-5 py-4 border-b border-ink-200 flex items-center justify-between sticky top-0 bg-white z-10">
               <h2 className="font-bold text-ink-900 flex items-center gap-2">
                 <Bell className="w-5 h-5 text-primary-600" />
-                Notificaciones
+                Notificaciones {unreadCount > 0 && <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{unreadCount}</span>}
               </h2>
-              <button onClick={() => setShowNotifications(false)} className="text-ink-400 hover:text-ink-600">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button onClick={markAllRead} className="text-xs text-primary-600 font-semibold hover:underline">
+                    Marcar todo leído
+                  </button>
+                )}
+                <button onClick={() => setShowNotifications(false)} className="text-ink-400 hover:text-ink-600 p-1">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             <div className="divide-y divide-ink-100">
               {userNotifications.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-ink-400">
                   <Bell className="w-12 h-12 mb-3 text-ink-300" />
                   <p className="font-medium">Sin notificaciones</p>
+                  <p className="text-xs mt-1">Los anuncios del admin aparecerán aquí</p>
                 </div>
               ) : (
                 userNotifications.map((n) => (
-                  <div key={n.id} className={`px-5 py-4 ${!n.read ? 'bg-primary-50/50' : ''}`}>
+                  <div key={n.id} className={`px-5 py-4 ${!n.read ? 'bg-blue-50/60' : ''} hover:bg-ink-50 transition-colors`}>
                     <div className="flex items-start gap-3">
                       <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                        n.type === 'success' ? 'bg-success-100 text-success-600' :
-                        n.type === 'warning' ? 'bg-warning-100 text-warning-600' :
-                        'bg-primary-100 text-primary-600'
+                        n.type === 'success' ? 'bg-green-100 text-green-600' :
+                        n.type === 'warning' ? 'bg-amber-100 text-amber-600' :
+                        n.type === 'error' ? 'bg-red-100 text-red-600' :
+                        'bg-blue-100 text-blue-600'
                       }`}>
                         {n.type === 'success' ? <Check className="w-4 h-4" /> :
                          n.type === 'warning' ? <AlertTriangle className="w-4 h-4" /> :
                          <Info className="w-4 h-4" />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-ink-800">{n.title}</p>
-                        <p className="text-sm text-ink-600 mt-0.5">{n.message}</p>
+                        <p className="text-sm font-semibold text-ink-800 leading-tight">{n.title}</p>
+                        <p className="text-sm text-ink-600 mt-1 leading-snug">{n.message}</p>
+                        <p className="text-[11px] text-ink-400 mt-2">{new Date(n.created_at).toLocaleString('es-MX')}</p>
                         {!n.read && (
                           <button
                             onClick={() => markNotificationRead(n.id)}

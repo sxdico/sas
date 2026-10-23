@@ -14,7 +14,6 @@ interface NavItem {
 }
 
 const ALL_NAV_ITEMS: NavItem[] = [
-  { label: 'Broadcasts', icon: Megaphone, page: 'broadcasts', permission: 'tenants' },
   { label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard', permission: 'reports' },
   { label: 'POS', icon: ShoppingCart, page: 'pos', permission: 'pos' },
   { label: 'Órdenes', icon: ClipboardList, page: 'orders', permission: 'ordersView' },
@@ -23,6 +22,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { label: 'Finanzas', icon: TrendingUp, page: 'reports', permission: 'reports' },
   { label: 'Usuarios', icon: Users, page: 'users', permission: 'users' },
   { label: 'Talleres', icon: Building2, page: 'tenants', permission: 'tenants' },
+  { label: 'Broadcasts', icon: Megaphone, page: 'broadcasts', permission: 'tenants' },
 ];
 
 interface LayoutProps {
@@ -109,15 +109,16 @@ export default function Layout({ currentPage, onNavigate, children, notification
             </button>
             <h1 className="text-lg font-bold text-ink-900">{currentLabel}</h1>
           </div>
-          <div className="flex items-center gap-2">
-            {notificationCount > 0 && (
-              <button onClick={onNotificationsClick} className="relative p-2 rounded-lg hover:bg-ink-100 transition-colors">
-                <Bell className="w-5 h-5 text-ink-600" />
-                <span className="absolute top-1 right-1 w-4 h-4 bg-error-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-                  {notificationCount}
+          <div className="flex items-center gap-3">
+            {/* FIX: La campanita SIEMPRE se muestra, el badge solo si >0 */}
+            <button onClick={onNotificationsClick} className="relative p-2.5 rounded-xl hover:bg-ink-100 transition-colors border border-ink-100">
+              <Bell className="w-5 h-5 text-ink-700" />
+              {notificationCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 text-white text-[11px] font-bold rounded-full flex items-center justify-center px-1 border-2 border-white">
+                  {notificationCount > 99 ? '99+' : notificationCount}
                 </span>
-              </button>
-            )}
+              )}
+            </button>
             <div className={`badge ${ROLE_COLORS[user.role]}`}>
               {ROLE_LABELS[user.role]}
             </div>
