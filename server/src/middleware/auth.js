@@ -82,3 +82,10 @@ export function blockIfLicenseExpired(req, res, next) {
     licenseExpired: true
   });
 }
+
+// ===== ALIAS PARA COMPATIBILIDAD CON BROADCASTS =====
+// Algunos archivos usan requireRole, aquí lo mapeamos a authorize
+export function requireRole(role) {
+  const roles = Array.isArray(role) ? role : [role];
+  return authorize(roles);
+}
