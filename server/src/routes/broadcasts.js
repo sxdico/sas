@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { Tenant, Notification, Broadcast } from '../models.js';
-import { authMiddleware, requireRole } from '../middleware/auth.js';
+import { authMiddleware, authorize } from '../middleware/auth.js';
 import { Op } from 'sequelize';
 
 const router = Router();
 
 router.use(authMiddleware);
-router.use(requireRole('super_admin'));
+router.use(authorize(['super_admin']));
 
 // GET /api/broadcasts - historial
 router.get('/', async (req, res) => {
@@ -18,7 +18,7 @@ router.get('/', async (req, res) => {
   res.json({ broadcasts });
 });
 
-// GET /api/broadcasts/preview?plans=all
+// GET /api/broadcasts/preview
 router.get('/preview', async (req, res) => {
   const { plans = 'all', status = 'active' } = req.query;
   const where = {};
@@ -75,19 +75,39 @@ router.post('/', async (req, res) => {
     await Notification.bulkCreate(notificationsToCreate.slice(i,i+100));
   }
 
-  res.json({ 
-    success: true, 
-    broadcast,
-    sent_to: tenants.length,
-    tenants: tenants.map(t=>({ id: t.id, name: t.name_taller, plan: t.plan }))
-  });
+  res.json({ success: true, broadcast, sent_to: tenants.length });
 });
 
+// DELETE /api/broadcasts/:id - AHORA SÍ BORRA EN MYSQL DE LOS USUARIOS
 router.delete('/:id', async (req,res)=>{
   const b = await Broadcast.findByPk(req.params.id);
   if(!b) return res.status(404).json({ error: 'No encontrado' });
+
+  // Construye el título exacto como se guardó en notifications
+  const notificationTitle = `[📢 ${b.type.toUpperCase()}] ${b.title}`;
+
+  // Borra todas las notificaciones que creó este broadcast
+  // Match por título exacto + mensaje para no borrar otras
+  const deleted = await Notification.destroy({
+    where: {
+      title: notificationTitle,
+      message: b.message
+    }
+  });
+
+  // Fallback: si por algún motivo el título tiene emoji diferente, borra por mensaje + target_roles
+  if (deleted === 0) {
+    await Notification.destroy({
+      where: {
+        message: b.message,
+        for_roles: b.target_roles
+      }
+    });
+  }
+
   await b.destroy();
-  res.json({ success: true });
+
+  res.json({ success: true, deleted_notifications: deleted });
 });
 
 export default router;

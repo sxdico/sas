@@ -15,12 +15,12 @@ interface NavItem {
 
 const ALL_NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', icon: LayoutDashboard, page: 'dashboard', permission: 'reports' },
-  { label: 'POS', icon: ShoppingCart, page: 'pos', permission: 'pos' },
+  { label: 'Caja', icon: ShoppingCart, page: 'pos', permission: 'pos' },
   { label: 'Órdenes', icon: ClipboardList, page: 'orders', permission: 'ordersView' },
   { label: 'Entregas', icon: Package, page: 'deliveries', permission: 'deliveries' },
   { label: 'Inventario', icon: Package, page: 'inventory', permission: 'inventory' },
   { label: 'Finanzas', icon: TrendingUp, page: 'reports', permission: 'reports' },
-  { label: 'Usuarios', icon: Users, page: 'users', permission: 'users' },
+  { label: 'Equipo', icon: Users, page: 'users', permission: 'users' },
   { label: 'Talleres', icon: Building2, page: 'tenants', permission: 'tenants' },
   { label: 'Broadcasts', icon: Megaphone, page: 'broadcasts', permission: 'tenants' },
 ];
