@@ -12,7 +12,7 @@ import Inventory from '@/pages/Inventory';
 import Tenants from '@/pages/Tenants';
 import Broadcasts from '@/pages/Broadcasts';
 import Dashboard from '@/pages/Dashboard';
-import Reports from '@/pages/Reports';
+import Finanzas from '@/pages/Finanzas';
 import Users from '@/pages/Users';
 import { Bell, X, Check, AlertTriangle, Info } from 'lucide-react';
 
@@ -110,7 +110,7 @@ function AppContent() {
       case 'inventory': return <Inventory />;
       case 'tenants': return <Tenants />;
       case 'broadcasts': return <Broadcasts />;
-      case 'reports': return <Reports />;
+      case 'finanzas': return <Finanzas />;
       case 'users': return <Users />;
       default: return <Dashboard />;
     }
