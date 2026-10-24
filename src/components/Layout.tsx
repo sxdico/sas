@@ -5,7 +5,7 @@ import {
   Wrench, LayoutDashboard, ShoppingCart, ClipboardList, Package,
   Users, Building2, LogOut, Bell, Menu, TrendingUp, Megaphone,
   ChevronDown, DollarSign, ArrowDownLeft, ArrowUpRight, Scissors,
-  HelpCircle, FileBarChart
+  HelpCircle, FileBarChart, FileText
 } from 'lucide-react';
 
 interface NavItem {
@@ -34,6 +34,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
       { label: 'Órdenes', icon: ClipboardList, page: 'orders', permission: 'ordersView' },
       { label: 'Clientes', icon: Users, page: 'clients', permission: 'ordersView' },
       { label: 'Entregas Pendientes', icon: Package, page: 'deliveries', permission: 'deliveries' },
+      { label: 'Cotizaciones', icon: FileText, page: 'cotizaciones', permission: 'ordersView' },
     ]
   },
   { label: 'Artículos', icon: Package, page: 'inventory', permission: 'inventory' },
