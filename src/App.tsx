@@ -22,19 +22,16 @@ function AppContent() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
 
-  // FIX: Cargar notificaciones REALES del backend cada vez que cambia usuario o cada 30s
   const loadNotifications = useCallback(async () => {
     if (!user) return;
-    // super_admin no tiene notificaciones de tenant, no pedir
     if (user.role === 'super_admin') {
       setNotifications([]);
       return;
     }
     try {
       const res = await notificationAPI.list();
-      const data = res.data.notifications || res.data || [];
-      // Normaliza formato backend -> AppNotification
-      const mapped: AppNotification[] = data.map((n: any) => ({
+      const raw = res.data.notifications || res.data || [];
+      const mapped: AppNotification[] = raw.map((n: AppNotification) => ({
         id: n.id,
         tenant_id: n.tenant_id,
         title: n.title,
@@ -52,16 +49,17 @@ function AppContent() {
 
   useEffect(() => {
     loadNotifications();
-    const interval = setInterval(loadNotifications, 30000); // 30s poll para ver broadcasts nuevos
+    const interval = setInterval(loadNotifications, 30000);
     return () => clearInterval(interval);
   }, [loadNotifications]);
 
   const userNotifications = useMemo(() => {
     if (!user) return [];
     if (user.role === 'super_admin') return [];
-    return notifications.filter((n) =>
-      n.for_roles.split(',').map((r: string) => r.trim()).includes(user.role)
-    );
+    return notifications.filter((n) => {
+      const rolesStr = typeof n.for_roles === 'string' ? n.for_roles : (n.for_roles as unknown as string[]).join(',');
+      return rolesStr.split(',').map((r) => r.trim()).includes(user.role);
+    });
   }, [notifications, user]);
 
   const unreadCount = userNotifications.filter((n) => !n.read).length;
@@ -78,15 +76,13 @@ function AppContent() {
 
   const handleSaleComplete = useCallback((_items: SaleItem[], _total: number, _method: PaymentMethod, _customerName: string | null) => {}, []);
 
-  const handleOrderStatusChange = useCallback(async (_orderId: string, newStatus: OrderStatus) => {
-    // Recargar notificaciones cuando cambia estado (si tu backend crea notif)
+  const handleOrderStatusChange = useCallback(async (_orderId: string, _newStatus: OrderStatus) => {
     loadNotifications();
   }, [loadNotifications]);
 
   const handleDeliver = useCallback((_orderId: string) => {}, []);
 
   const markNotificationRead = async (id: string) => {
-    // Optimistic UI
     setNotifications((prev) => prev.map((n) => n.id === id ? { ...n, read: true } : n));
     try {
       await notificationAPI.markRead(id);
@@ -131,7 +127,6 @@ function AppContent() {
         {renderPage()}
       </Layout>
 
-      {/* Notifications panel - REAL */}
       {showNotifications && (
         <div className="fixed inset-0 z-50 flex justify-end animate-fade-in" onClick={() => setShowNotifications(false)}>
           <div className="absolute inset-0 bg-black/30" />

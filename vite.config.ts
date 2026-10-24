@@ -1,4 +1,3 @@
-
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
@@ -29,6 +28,16 @@ export default defineConfig({
           port: 5173,
           protocol: 'ws',
         },
+
+    // FIX PARA EL ERROR .git/objects QUE TENÍAS
+    watch: {
+      ignored: [
+        '**/.git/**',
+        '**/.git/objects/**',
+        '**/node_modules/**',
+        '**/dist/**',
+      ],
+    },
   },
 
   resolve: {
