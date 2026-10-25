@@ -14,6 +14,7 @@ import Broadcasts from '@/pages/Broadcasts';
 import Dashboard from '@/pages/Dashboard';
 import Finanzas from '@/pages/Finanzas';
 import Users from '@/pages/Users';
+import Repairs from '@/pages/Repairs';
 import { Bell, X, Check, AlertTriangle, Info } from 'lucide-react';
 
 function AppContent() {
@@ -112,6 +113,7 @@ function AppContent() {
       case 'broadcasts': return <Broadcasts />;
       case 'finanzas': return <Finanzas />;
       case 'users': return <Users />;
+      case 'repairs': return <Repairs />;
       default: return <Dashboard />;
     }
   };

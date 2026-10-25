@@ -33,9 +33,9 @@ const ALL_NAV_ITEMS: NavItem[] = [
     children: [
       { label: 'Órdenes', icon: ClipboardList, page: 'orders', permission: 'ordersView' },
       { label: 'Clientes', icon: Users, page: 'clients', permission: 'ordersView' },
+      { label: 'Historial Reparaciones', icon: ClipboardList, page: 'repairs', permission: 'ordersView' },
       { label: 'Entregas Pendientes', icon: Package, page: 'deliveries', permission: 'deliveries' },
       { label: 'Cotizaciones', icon: FileText, page: 'cotizaciones', permission: 'ordersView' },
-      { label: 'Historial Reparaciones', icon: ClipboardList, page: 'repairs', permission: 'ordersView' },
     ]
   },
   { label: 'Artículos', icon: Package, page: 'inventory', permission: 'inventory' },
