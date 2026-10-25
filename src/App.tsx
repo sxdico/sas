@@ -65,15 +65,17 @@ function AppContent() {
 
   const unreadCount = userNotifications.filter((n) => !n.read).length;
 
-  const handleNavigate = useCallback((page: string) => {
-    if (!user) return;
-    if (page === 'dashboard' && !can(user.role, 'reports')) {
-      if (can(user.role, 'pos')) return setCurrentPage('pos');
-      if (can(user.role, 'deliveries')) return setCurrentPage('deliveries');
-      if (can(user.role, 'tenants')) return setCurrentPage('tenants');
-    }
-    setCurrentPage(page);
-  }, [user]);
+const handleNavigate = useCallback((page: string) => {
+  if (!user) return;
+  // Normalizamos: si alguien manda 'caja' lo mandamos a 'pos' que es tu Caja real
+  const normalizedPage = page === 'caja' ? 'pos' : page;
+  if (normalizedPage === 'dashboard' && !can(user.role, 'reports')) {
+    if (can(user.role, 'pos')) return setCurrentPage('pos');
+    if (can(user.role, 'deliveries')) return setCurrentPage('deliveries');
+    if (can(user.role, 'tenants')) return setCurrentPage('tenants');
+  }
+  setCurrentPage(normalizedPage);
+}, [user]);
 
   const handleSaleComplete = useCallback((_items: SaleItem[], _total: number, _method: PaymentMethod, _customerName: string | null) => {}, []);
 
@@ -102,21 +104,23 @@ function AppContent() {
 
   if (!user) return <Login />;
 
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'dashboard': return <Dashboard />;
-      case 'pos': return <POS onSaleComplete={handleSaleComplete} />;
-      case 'orders': return <Orders onStatusChange={handleOrderStatusChange} onNavigate={handleNavigate} />;
-      case 'deliveries': return <Deliveries onDeliver={handleDeliver} />;
-      case 'inventory': return <Inventory />;
-      case 'tenants': return <Tenants />;
-      case 'broadcasts': return <Broadcasts />;
-      case 'finanzas': return <Finanzas />;
-      case 'users': return <Users />;
-      case 'repairs': return <Repairs />;
-      default: return <Dashboard />;
-    }
-  };
+const renderPage = () => {
+  switch (currentPage) {
+    case 'dashboard': return <Dashboard />;
+    case 'pos':
+    case 'caja': // <-- AHORA SI EXISTE, los dos mandan a Caja
+      return <POS onSaleComplete={handleSaleComplete} />;
+    case 'orders': return <Orders onStatusChange={handleOrderStatusChange} onNavigate={handleNavigate} />;
+    case 'deliveries': return <Deliveries onDeliver={handleDeliver} />;
+    case 'inventory': return <Inventory />;
+    case 'tenants': return <Tenants />;
+    case 'broadcasts': return <Broadcasts />;
+    case 'finanzas': return <Finanzas />;
+    case 'users': return <Users />;
+    case 'repairs': return <Repairs onNavigate={handleNavigate} />; // <-- PASALE EL NAVIGATE
+    default: return <Dashboard />;
+  }
+};
 
   return (
     <>
