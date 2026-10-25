@@ -35,6 +35,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
       { label: 'Clientes', icon: Users, page: 'clients', permission: 'ordersView' },
       { label: 'Entregas Pendientes', icon: Package, page: 'deliveries', permission: 'deliveries' },
       { label: 'Cotizaciones', icon: FileText, page: 'cotizaciones', permission: 'ordersView' },
+      { label: 'Historial Reparaciones', icon: ClipboardList, page: 'repairs', permission: 'ordersView' },
     ]
   },
   { label: 'Artículos', icon: Package, page: 'inventory', permission: 'inventory' },
@@ -49,7 +50,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   {
     label: 'Ayuda y Soporte', icon: HelpCircle, page: 'ayuda-group', permission: 'reports',
     children: [
-      { label: 'Reportes', icon: FileBarChart, page: 'tickets', permission: 'reports' },
+      { label: 'Reportes', icon: FileBarChart, page: 'reports', permission: 'reports' },
       { label: 'Broadcasts', icon: Megaphone, page: 'broadcasts', permission: 'tenants' },
     ]
   },
