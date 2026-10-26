@@ -95,9 +95,26 @@ export const cashAPI = {
   close: (data: any) => api.post('/cash/close', data),
   history: () => api.get('/cash/history'),
   get: (id: string) => api.get(`/cash/${id}`),
+
+  // --- SALIDAS ---
   expenses: () => api.get('/cash/expenses'),
-  createExpense: (data: any) => api.post('/cash/expenses', data),
+  createExpense: (data: any) => {
+    if (data instanceof FormData) {
+      return api.post('/cash/expenses', data, { headers: { 'Content-Type': 'multipart/form-data' } });
+    }
+    return api.post('/cash/expenses', data);
+  },
   deleteExpense: (id: string) => api.delete(`/cash/expenses/${id}`),
+
+  // --- ENTRADAS (NUEVO) ---
+  incomes: () => api.get('/cash/incomes'),
+  createIncome: (data: any) => {
+    if (data instanceof FormData) {
+      return api.post('/cash/incomes', data, { headers: { 'Content-Type': 'multipart/form-data' } });
+    }
+    return api.post('/cash/incomes', data);
+  },
+  deleteIncome: (id: string) => api.delete(`/cash/incomes/${id}`),
 };
 
 export const saleAPI = {

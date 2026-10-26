@@ -10,6 +10,7 @@ import {
 
 interface POSProps {
   onSaleComplete: (saleData: SaleItem[], total: number, method: PaymentMethod, customerName: string | null) => void;
+  onNavigate?: (page: string) => void;
 }
 
 interface PendingAnticipo {
@@ -22,7 +23,7 @@ interface PendingAnticipo {
   type?: 'anticipo' | 'liquidacion';
 }
 
-export default function POS({ onSaleComplete }: POSProps) {
+export default function POS({ onSaleComplete, onNavigate }: POSProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [customers] = useState<Customer[]>([]);
@@ -32,10 +33,7 @@ export default function POS({ onSaleComplete }: POSProps) {
   const [cashSession, setCashSession] = useState<any>(null);
   const [cashSummary, setCashSummary] = useState<any>(null);
   const [showOpenCash, setShowOpenCash] = useState(false);
-  const [showCloseCash, setShowCloseCash] = useState(false);
   const [openingAmount, setOpeningAmount] = useState('500');
-  const [closingAmount, setClosingAmount] = useState('');
-  const [closeNotes, setCloseNotes] = useState('');
 
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -49,15 +47,17 @@ export default function POS({ onSaleComplete }: POSProps) {
   const [processing, setProcessing] = useState(false);
   const [pendingOrderInfo, setPendingOrderInfo] = useState<PendingAnticipo | null>(null);
 
+  const goToCorte = () => {
+    if (onNavigate) {
+      onNavigate('cortedecaja');
+    }
+  };
+
   const loadCash = async () => {
     try {
       const res = await cashAPI.current();
       setCashSession(res.data.session);
       setCashSummary(res.data.summary || null);
-      if (res.data.session && res.data.summary) {
-        const expected = parseFloat(res.data.session.opening_amount) + parseFloat(res.data.summary.efectivo || 0) - parseFloat(res.data.summary.total_salidas || 0);
-        setClosingAmount(String(expected));
-      }
     } catch (e) {
       console.error('Error caja', e);
     }
@@ -167,16 +167,6 @@ export default function POS({ onSaleComplete }: POSProps) {
     } catch (e: any) { alert(e.response?.data?.error || 'Error abriendo caja'); }
   };
 
-  const handleCloseCash = async () => {
-    try {
-      const res = await cashAPI.close({ closing_amount: parseFloat(closingAmount) || 0, notes: closeNotes });
-      setShowCloseCash(false);
-      setCashSession(null);
-      setCashSummary(null);
-      alert(`Caja cerrada. Diferencia: ${formatCurrency(res.data.session?.difference || res.data.summary?.difference || 0)}`);
-    } catch (e: any) { alert(e.response?.data?.error || 'Error cerrando caja'); }
-  };
-
   const completeSale = async () => {
     if (!cashSession) { alert('Debes abrir caja primero'); return; }
     setProcessing(true);
@@ -231,13 +221,10 @@ export default function POS({ onSaleComplete }: POSProps) {
 
   const isAnticipoInCart = cart.some(i => i.name.toLowerCase().includes('anticipo') || i.name.toLowerCase().includes('liquidación'));
 
-  // CALCULO CORREGIDO CON SALIDAS
   const expectedInCash = useMemo(() => {
     if (!cashSession) return 0;
-    return parseFloat(cashSession.opening_amount) + parseFloat(cashSummary?.efectivo || 0) - parseFloat(cashSummary?.total_salidas || 0);
+    return parseFloat(cashSession.opening_amount) + parseFloat(cashSummary?.efectivo || 0) + parseFloat(cashSummary?.total_entradas || 0) - parseFloat(cashSummary?.total_salidas || 0);
   }, [cashSession, cashSummary]);
-
-  const diff = closingAmount ? parseFloat(closingAmount) - expectedInCash : 0;
 
   if (loading) {
     return (
@@ -250,26 +237,32 @@ export default function POS({ onSaleComplete }: POSProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* BARRA DE CAJA - DENTRO DE POS - CON SALIDAS */}
-      <div className={`px-4 py-2.5 flex items-center justify-between border-b-2 ${cashSession ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-        {cashSession ? (
-          <>
-            <div className="flex items-center gap-4">
-              <span className="flex items-center gap-2 text-sm font-bold text-green-700"><Unlock className="w-4 h-4" /> {cashSession.folio} ABIERTA</span>
-              <span className="text-xs bg-white px-2 py-1 rounded border">Inicial: {formatCurrency(cashSession.opening_amount)}</span>
-              <span className="text-xs bg-white px-2 py-1 rounded border">Ventas: {formatCurrency(cashSummary?.total || 0)} ({cashSummary?.count || 0})</span>
-              <span className="text-xs bg-green-600 text-white px-2 py-1 rounded font-bold">Efectivo: {formatCurrency(cashSummary?.efectivo || 0)}</span>
-              {(cashSummary?.total_salidas || 0) > 0 && <span className="text-xs bg-red-600 text-white px-2 py-1 rounded font-bold">Salidas: -{formatCurrency(cashSummary?.total_salidas || 0)}</span>}
-              <span className="text-xs hidden md:inline font-bold">Esperado: {formatCurrency(expectedInCash)}</span>
-            </div>
-            <button onClick={() => setShowCloseCash(true)} className="btn-primary bg-orange-600 hover:bg-orange-700 py-1.5 text-sm"><DollarSign className="w-4 h-4" /> Corte de caja</button>
-          </>
-        ) : (
-          <>
-            <span className="flex items-center gap-2 text-sm font-bold text-red-700"><Lock className="w-4 h-4" /> CAJA CERRADA - No puedes vender</span>
-            <button onClick={() => setShowOpenCash(true)} className="btn-primary py-1.5 text-sm"><Unlock className="w-4 h-4" /> Abrir caja</button>
-          </>
-        )}
+      {/* TOP BAR - MISMO TAMAÑO Y SEPARACIÓN QUE CORTE DE CAJA */}
+      <div className="bg-[#f8fafc] p-3">
+        <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border flex-wrap justify-between ${cashSession ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+          {cashSession ? (
+            <>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Lock className="w-3.5 h-3.5 text-ink-400" />
+                <span className="bg-green-600 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">● {cashSession.folio} ABIERTA</span>
+                <span className="text-xs bg-white px-2 py-1 rounded border">Inicial: {formatCurrency(cashSession.opening_amount)}</span>
+                <span className="text-xs bg-white px-2 py-1 rounded border">Ventas: {formatCurrency(cashSummary?.total || 0)} {cashSummary?.count || 0}</span>
+                <span className="text-xs bg-emerald-600 text-white px-2 py-1 rounded font-bold">Efectivo: {formatCurrency(cashSummary?.efectivo || 0)}</span>
+                {(cashSummary?.total_entradas || 0) > 0 && <span className="text-xs bg-emerald-600 text-white px-2 py-1 rounded">Entradas: +{formatCurrency(cashSummary?.total_entradas || 0)}</span>}
+                {(cashSummary?.total_salidas || 0) > 0 && <span className="text-xs bg-red-600 text-white px-2 py-1 rounded">Salidas: -{formatCurrency(cashSummary?.total_salidas || 0)}</span>}
+                <span className="text-xs bg-white px-2 py-1 rounded border font-bold">Esperado: {formatCurrency(expectedInCash)}</span>
+              </div>
+              <button onClick={goToCorte} className="bg-[#ea580c] hover:bg-[#c2410c] text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-sm">
+                <DollarSign className="w-3.5 h-3.5" /> Corte de caja
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="flex items-center gap-2 text-xs font-bold text-red-700"><Lock className="w-3.5 h-3.5" /> CAJA CERRADA - No puedes vender</span>
+              <button onClick={() => setShowOpenCash(true)} className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1"><Unlock className="w-3.5 h-3.5" /> Abrir caja</button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-1 h-0">
@@ -366,36 +359,6 @@ export default function POS({ onSaleComplete }: POSProps) {
             <div className="flex gap-3">
               <button onClick={() => setShowOpenCash(false)} className="btn-secondary flex-1">Cancelar</button>
               <button onClick={handleOpenCash} className="btn-primary flex-1 bg-green-600 hover:bg-green-700">Abrir caja</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showCloseCash && cashSession && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-auto">
-          <div className="card w-full max-w-lg p-6 my-8">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><DollarSign className="w-5 h-5 text-orange-600" /> Corte de caja - {cashSession.folio}</h2>
-            <div className="bg-ink-50 rounded-xl p-4 space-y-2 mb-4 text-sm">
-              <div className="flex justify-between"><span>Monto inicial:</span><span className="font-bold">{formatCurrency(cashSession.opening_amount)}</span></div>
-              <div className="flex justify-between"><span>Ventas totales:</span><span className="font-bold">{formatCurrency(cashSummary?.total || 0)} ({cashSummary?.count || 0} ventas)</span></div>
-              <div className="flex justify-between text-green-700 font-bold"><span>Efectivo:</span><span>{formatCurrency(cashSummary?.efectivo || 0)}</span></div>
-              <div className="flex justify-between"><span>Tarjeta:</span><span>{formatCurrency(cashSummary?.tarjeta || 0)}</span></div>
-              <div className="flex justify-between"><span>Transferencia:</span><span>{formatCurrency(cashSummary?.transferencia || 0)}</span></div>
-              <div className="flex justify-between text-red-600 font-bold border-t pt-2"><span>- Salidas:</span><span>- {formatCurrency(cashSummary?.total_salidas || 0)} ({cashSummary?.salidas_count || 0})</span></div>
-              <div className="border-t pt-2 mt-2 flex justify-between text-base font-bold"><span>Esperado en caja:</span><span>{formatCurrency(expectedInCash)}</span></div>
-            </div>
-            <label className="label font-bold">¿Cuánto hay realmente en caja? $</label>
-            <input type="number" className="input text-2xl font-bold mb-2" value={closingAmount} onChange={e => setClosingAmount(e.target.value)} autoFocus />
-            {closingAmount && (
-              <div className={`rounded-lg p-3 mb-4 text-center font-bold ${diff === 0 ? 'bg-green-100 text-green-700' : diff > 0 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
-                Diferencia: {formatCurrency(diff)} {diff > 0 ? '(Sobra)' : diff < 0 ? '(Falta)' : '(Cuadrado ✅)'}
-              </div>
-            )}
-            <label className="label">Notas (opcional)</label>
-            <textarea className="input mb-4" value={closeNotes} onChange={e => setCloseNotes(e.target.value)} placeholder="Ej. Se pagó luz $200" />
-            <div className="flex gap-3">
-              <button onClick={() => setShowCloseCash(false)} className="btn-secondary flex-1">Cancelar</button>
-              <button onClick={handleCloseCash} className="btn-primary flex-1 bg-orange-600 hover:bg-orange-700">Cerrar caja</button>
             </div>
           </div>
         </div>
