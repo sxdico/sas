@@ -83,7 +83,7 @@ export default function Layout({ currentPage, onNavigate, children, notification
   });
 
   const allFlatItems = navItems.flatMap(n => n.children ? [n, ...n.children] : [n]);
-  const currentLabel = allFlatItems.find((n) => n.page === currentPage)?.label ?? 'FixPro';
+  const currentLabel = allFlatItems.find((n) => n.page === currentPage)?.label ?? 'iFixSoft';
 
   const sidebar = (
     <div className="flex flex-col h-full bg-ink-900 w-64 shrink-0">
