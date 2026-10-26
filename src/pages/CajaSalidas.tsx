@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { cashAPI } from '@/api/client';
 import { formatCurrency, formatDateTime } from '@/utils/permissions';
-import { DollarSign, Clock, FileText, Upload, Banknote, Receipt, ShoppingBag, Lightbulb, Utensils, UserMinus, MoreHorizontal, X, Trash2, Lock, ShoppingCart, Users } from 'lucide-react';
+import { DollarSign, Clock, FileText, Upload, Banknote, Receipt, ShoppingBag, Lightbulb, Utensils, UserMinus, MoreHorizontal, X, Trash2, Lock } from 'lucide-react';
 
 type Categoria = 'gasto_general' | 'compra_refaccion' | 'pago_servicios' | 'comida' | 'retiro_dueno' | 'otro' | 'pago_proveedor' | 'retiro' | 'sueldo' | 'servicios';
 
@@ -58,9 +58,11 @@ export default function CajaSalidas({ onNavigate }: { onNavigate?: (page: string
   useEffect(() => { loadAll(); }, []);
 
   const totalSalidasHoy = useMemo(() => expenses.reduce((acc, s) => acc + Number(s.amount), 0), [expenses]);
+
+  // CORREGIDO: Ahora si suma Entradas - misma formula que POS y CorteDeCaja
   const efectivoActual = useMemo(() => {
-    if (!currentCash) return 0;
-    return parseFloat(currentCash.opening_amount || 0) + parseFloat(summary?.efectivo || 0) - parseFloat(summary?.total_salidas || 0);
+    if (!currentCash || !summary) return 0;
+    return parseFloat(currentCash.opening_amount || 0) + parseFloat(summary.efectivo || 0) + parseFloat(summary.total_entradas || 0) - parseFloat(summary.total_salidas || 0);
   }, [currentCash, summary]);
 
   const handleMontoChange = (value: string) => {
@@ -109,7 +111,7 @@ export default function CajaSalidas({ onNavigate }: { onNavigate?: (page: string
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex flex-col">
-      {/* TOP BAR UNIFICADO - MISMO QUE CAJA */}
+      {/* TOP BAR UNIFICADO - AHORA SI MUESTRA ENTRADAS */}
       <div className="p-3">
         <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border flex-wrap justify-between ${currentCash ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
           {currentCash ? (
@@ -120,6 +122,7 @@ export default function CajaSalidas({ onNavigate }: { onNavigate?: (page: string
                 <span className="text-xs bg-white px-2 py-1 rounded border">Inicial: {formatCurrency(currentCash.opening_amount)}</span>
                 <span className="text-xs bg-white px-2 py-1 rounded border">Ventas: {formatCurrency(summary?.total || 0)} {summary?.count || 0}</span>
                 <span className="text-xs bg-emerald-600 text-white px-2 py-1 rounded font-bold">Efectivo: {formatCurrency(summary?.efectivo || 0)}</span>
+                <span className="text-xs bg-emerald-600 text-white px-2 py-1 rounded font-bold">Entradas: +{formatCurrency(summary?.total_entradas || 0)}</span>
                 <span className="text-xs bg-red-600 text-white px-2 py-1 rounded font-bold">Salidas: -{formatCurrency(summary?.total_salidas || 0)}</span>
                 <span className="text-xs bg-white px-2 py-1 rounded border font-bold">Esperado: {formatCurrency(efectivoActual)}</span>
               </div>

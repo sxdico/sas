@@ -109,7 +109,7 @@ export default function CorteDeCaja() {
 
   return (
     <div className="bg-[#f8fafc] min-h-full">
-      {/* TOP BAR UNIFICADO - MISMO QUE CAJA */}
+      {/* TOP BAR UNIFICADO - MISMO QUE CAJA CON CANDADO */}
       <div className="p-3">
         <div className="flex items-center gap-2 px-4 py-2 rounded-xl border flex-wrap justify-between bg-green-50 border-green-200">
           <div className="flex items-center gap-2 flex-wrap">
@@ -128,7 +128,6 @@ export default function CorteDeCaja() {
 
       <div className="p-4 md:p-6 pt-0">
         <h1 className="text-3xl font-extrabold tracking-tight mb-6">Corte de Caja</h1>
-
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-6">
           <div className="space-y-6">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -188,22 +187,78 @@ export default function CorteDeCaja() {
         </div>
       </div>
 
+      {/* MODAL CIERRE - CON CONTADOR DE DINERO */}
       {showCloseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 overflow-auto">
           <div className="bg-white rounded-2xl w-full max-w-lg my-8 shadow-2xl overflow-hidden">
-            <div className="p-5">
+            <div className="p-5 max-h-[90vh] overflow-y-auto">
               <h2 className="font-bold text-lg flex items-center gap-2"><DollarSign className="w-5 h-5 text-orange-600" /> Corte de caja - {cashSession.folio}</h2>
+
               <div className="bg-gray-50 rounded-xl p-4 space-y-1.5 mt-4 text-sm">
                 <div className="flex justify-between"><span>Monto inicial:</span><span className="font-bold">{formatCurrency(cashSession.opening_amount)}</span></div>
                 <div className="flex justify-between"><span>Ventas totales:</span><span className="font-bold">{formatCurrency(summary?.total || 0)} ({summary?.count || 0} ventas)</span></div>
                 <div className="flex justify-between text-green-700 font-bold"><span>Efectivo:</span><span>{formatCurrency(summary?.efectivo || 0)}</span></div>
                 <div className="flex justify-between"><span>Tarjeta:</span><span>{formatCurrency(summary?.tarjeta || 0)}</span></div>
                 <div className="flex justify-between"><span>Transferencia:</span><span>{formatCurrency(summary?.transferencia || 0)}</span></div>
-                <div className="flex justify-between text-emerald-600 font-bold"><span>+ Entradas:</span><span>+ {formatCurrency(summary?.total_entradas || 0)}</span></div>
-                <div className="flex justify-between text-red-600 font-bold"><span>- Salidas:</span><span>- {formatCurrency(summary?.total_salidas || 0)}</span></div>
+                <div className="flex justify-between text-emerald-600 font-bold"><span>+ Entradas:</span><span>+ {formatCurrency(summary?.total_entradas || 0)} ({summary?.entradas_count || 0})</span></div>
+                <div className="flex justify-between text-red-600 font-bold"><span>- Salidas:</span><span>- {formatCurrency(summary?.total_salidas || 0)} ({summary?.salidas_count || 0})</span></div>
                 <div className="border-t pt-2 mt-2 flex justify-between text-base font-bold"><span>Esperado en caja:</span><span>{formatCurrency(expectedInCash)}</span></div>
               </div>
-              <div className="flex gap-3 mt-6"><button onClick={() => setShowCloseModal(false)} className="flex-1 border rounded-xl py-2.5 font-bold text-sm">Cancelar</button><button onClick={handleCloseCash} className="flex-1 bg-[#ea580c] hover:bg-[#c2410c] text-white rounded-xl py-2.5 font-bold text-sm">Cerrar caja</button></div>
+
+              <div className="mt-5">
+                <h3 className="font-bold text-sm flex items-center gap-2">🧮 Contador de efectivo — Registra lo contado</h3>
+                <p className="text-[11px] text-ink-500">Ingresa la cantidad de billetes y monedas para calcular el total contado automáticamente</p>
+
+                <div className="mt-3">
+                  <p className="text-[10px] font-bold tracking-widest text-ink-500 mb-2">BILLETES</p>
+                  <div className="space-y-1.5">
+                    {DENOMINACIONES.billetes.map(b => (
+                      <div key={b.value} className="flex items-center justify-between text-xs gap-2">
+                        <span className="w-28">Billete ${b.value.toLocaleString()}</span>
+                        <span className="text-ink-400">x</span>
+                        <input type="number" min={0} value={contador[b.value] || 0} onChange={e => updateContador(b.value, e.target.value)} className="w-16 border rounded px-1 py-0.5 text-center" />
+                        <span className={`w-16 text-right px-2 py-0.5 rounded ${b.value === 100 && contador[100] > 0 ? 'bg-green-100 text-green-700 font-bold' : ''}`}>= ${b.value * (contador[b.value] || 0)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <p className="text-[10px] font-bold tracking-widest text-ink-500 mb-2">MONEDAS</p>
+                  <div className="space-y-1.5">
+                    {DENOMINACIONES.monedas.map(m => (
+                      <div key={m.value} className="flex items-center justify-between text-xs gap-2">
+                        <span className="w-28">Moneda ${m.value}</span>
+                        <span className="text-ink-400">x</span>
+                        <input type="number" min={0} value={contador[m.value] || 0} onChange={e => updateContador(m.value, e.target.value)} className="w-16 border rounded px-1 py-0.5 text-center" />
+                        <span className="w-16 text-right">= ${m.value * (contador[m.value] || 0)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="bg-gray-100 rounded-xl p-3">
+                    <p className="text-xs text-ink-500">Total contado</p>
+                    <p className="font-bold text-lg">{formatCurrency(totalContado)}</p>
+                    <p className="text-[11px] text-ink-500">({totalBilletes} billetes + {totalMonedas} monedas)</p>
+                  </div>
+                  <div className="space-y-2">
+                    <div className={`rounded-xl p-2 text-center text-sm font-bold ${diferencia === 0 ? 'bg-green-100 text-green-700' : diferencia > 0 ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
+                      Diferencia: {formatCurrency(diferencia)} — {diferencia === 0 ? 'Cuadrado ✅' : diferencia > 0 ? 'Sobra' : 'Falta'}
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold">Notas (opcional)</label>
+                      <input type="text" value={closeNotes} onChange={e => setCloseNotes(e.target.value)} placeholder="Ej. Se pagó luz $200" className="w-full border rounded px-2 py-1 text-xs" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button onClick={() => setShowCloseModal(false)} className="flex-1 border rounded-xl py-2.5 font-bold text-sm">Cancelar</button>
+                <button onClick={handleCloseCash} className="flex-1 bg-[#ea580c] hover:bg-[#c2410c] text-white rounded-xl py-2.5 font-bold text-sm">Cerrar caja</button>
+              </div>
             </div>
           </div>
         </div>
