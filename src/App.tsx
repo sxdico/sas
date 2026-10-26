@@ -15,6 +15,9 @@ import Dashboard from '@/pages/Dashboard';
 import Finanzas from '@/pages/Finanzas';
 import Users from '@/pages/Users';
 import Repairs from '@/pages/Repairs';
+import CajaSalidas from '@/pages/CajaSalidas';
+import CajaEntradas from './pages/CajaEntradas';
+import CorteDeCaja from './pages/CorteDeCaja';
 import { Bell, X, Check, AlertTriangle, Info } from 'lucide-react';
 
 function AppContent() {
@@ -107,9 +110,12 @@ const handleNavigate = useCallback((page: string) => {
 const renderPage = () => {
   switch (currentPage) {
     case 'dashboard': return <Dashboard />;
+    case 'entradas': return <CajaEntradas />;
+    case 'salidas': return <CajaSalidas />;
     case 'pos':
-    case 'caja': // <-- AHORA SI EXISTE, los dos mandan a Caja
-      return <POS onSaleComplete={handleSaleComplete} />;
+    case 'caja':
+      // AQUÍ ESTÁ EL FIX - LE PASAMOS onNavigate A POS
+      return <POS onSaleComplete={handleSaleComplete} onNavigate={handleNavigate} />;
     case 'orders': return <Orders onStatusChange={handleOrderStatusChange} onNavigate={handleNavigate} />;
     case 'deliveries': return <Deliveries onDeliver={handleDeliver} />;
     case 'inventory': return <Inventory />;
@@ -117,7 +123,8 @@ const renderPage = () => {
     case 'broadcasts': return <Broadcasts />;
     case 'finanzas': return <Finanzas />;
     case 'users': return <Users />;
-    case 'repairs': return <Repairs onNavigate={handleNavigate} />; // <-- PASALE EL NAVIGATE
+    case 'cortedecaja': return <CorteDeCaja />;
+    case 'repairs': return <Repairs onNavigate={handleNavigate} />;
     default: return <Dashboard />;
   }
 };

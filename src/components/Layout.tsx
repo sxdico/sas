@@ -25,7 +25,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
       { label: 'Caja', icon: DollarSign, page: 'pos', permission: 'pos' },
       { label: 'Entradas', icon: ArrowDownLeft, page: 'entradas', permission: 'pos' },
       { label: 'Salidas', icon: ArrowUpRight, page: 'salidas', permission: 'pos' },
-      { label: 'Corte de Caja', icon: Scissors, page: 'corte-caja', permission: 'pos' },
+      { label: 'Corte de Caja', icon: Scissors, page: 'cortedecaja', permission: 'pos' },
     ]
   },
   {
