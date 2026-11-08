@@ -8,7 +8,7 @@ import {
   PRIORITY_CONFIG, PRIORITY_ORDER, COLUMN_ORDER, ORDER_STATUS_FULL,
   getPriorityInfo, getWarrantyInfo, getPagoInfo, getPromisedInfo, goToCaja,
   type Priority
-} from '@/constants/repairOrders';
+} from '@/constants/RepairOrders';
 import { Plus, X, Clock, Check, Shield, Lock, Calendar, Ban, Search, Hash } from 'lucide-react';
 import OrderDetailModal from '@/components/OrderDetailModal';
 import CreateOrderModal from '@/components/CreateOrderModal';
