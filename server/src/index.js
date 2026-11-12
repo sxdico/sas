@@ -16,6 +16,8 @@ import notificationRoutes from './routes/notifications.js';
 import cashRoutes from './routes/cash.js';
 import evidenciasRoutes from './routes/evidence.js';
 import broadcastRoutes from './routes/broadcasts.js';
+import customerRoutes from './routes/customers.js';
+import supportTicketRoutes from './routes/supportTickets.js';
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -64,12 +66,14 @@ app.use('/api/tenants', tenantRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/customers', customerRoutes);
 app.use('/api/sales', saleRoutes);
 app.use('/api/deliveries', deliveryRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/cash', cashRoutes);
 app.use('/api/evidencias', evidenciasRoutes);
 app.use('/api/broadcasts', broadcastRoutes);
+app.use('/api/support-tickets', supportTicketRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

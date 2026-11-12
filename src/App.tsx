@@ -18,7 +18,10 @@ import Repairs from '@/pages/Repairs';
 import CajaSalidas from '@/pages/CajaSalidas';
 import CajaEntradas from './pages/CajaEntradas';
 import CorteDeCaja from './pages/CorteDeCaja';
-import { Bell, X, Check, AlertTriangle, Info } from 'lucide-react';
+import Clientes from '@/pages/Clientes';
+import SupportTickets from '@/pages/SupportTickets';
+import AdminTickets from '@/pages/AdminTickets';
+import { Bell, X } from 'lucide-react';
 
 function AppContent() {
   const { user } = useAuth();
@@ -68,17 +71,16 @@ function AppContent() {
 
   const unreadCount = userNotifications.filter((n) => !n.read).length;
 
-const handleNavigate = useCallback((page: string) => {
-  if (!user) return;
-  // Normalizamos: si alguien manda 'caja' lo mandamos a 'pos' que es tu Caja real
-  const normalizedPage = page === 'caja' ? 'pos' : page;
-  if (normalizedPage === 'dashboard' && !can(user.role, 'reports')) {
-    if (can(user.role, 'pos')) return setCurrentPage('pos');
-    if (can(user.role, 'deliveries')) return setCurrentPage('deliveries');
-    if (can(user.role, 'tenants')) return setCurrentPage('tenants');
-  }
-  setCurrentPage(normalizedPage);
-}, [user]);
+  const handleNavigate = useCallback((page: string) => {
+    if (!user) return;
+    const normalizedPage = page === 'caja' ? 'pos' : page;
+    if (normalizedPage === 'dashboard' && !can(user.role, 'reports')) {
+      if (can(user.role, 'pos')) return setCurrentPage('pos');
+      if (can(user.role, 'deliveries')) return setCurrentPage('deliveries');
+      if (can(user.role, 'tenants')) return setCurrentPage('tenants');
+    }
+    setCurrentPage(normalizedPage);
+  }, [user]);
 
   const handleSaleComplete = useCallback((_items: SaleItem[], _total: number, _method: PaymentMethod, _customerName: string | null) => {}, []);
 
@@ -105,29 +107,54 @@ const handleNavigate = useCallback((page: string) => {
     }
   };
 
+  const timeAgo = (dateStr: string) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'ahora mismo';
+    if (mins < 60) return `hace ${mins} min`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `hace ${hours} ${hours === 1 ? 'hora' : 'horas'}`;
+    const days = Math.floor(hours / 24);
+    return `hace ${days} ${days === 1 ? 'día' : 'días'}`;
+  };
+
+  const handleNotificationClick = (n: AppNotification) => {
+    const match = n.title.match(/#(TK-\d+)/);
+    if (match) {
+      localStorage.setItem('fixpro_open_ticket', match[1]);
+      setShowNotifications(false);
+      markNotificationRead(n.id);
+      setCurrentPage('reports');
+      return;
+    }
+    markNotificationRead(n.id);
+  };
+
   if (!user) return <Login />;
 
-const renderPage = () => {
-  switch (currentPage) {
-    case 'dashboard': return <Dashboard />;
-    case 'entradas': return <CajaEntradas />;
-    case 'salidas': return <CajaSalidas />;
-    case 'pos':
-    case 'caja':
-      // AQUÍ ESTÁ EL FIX - LE PASAMOS onNavigate A POS
-      return <POS onSaleComplete={handleSaleComplete} onNavigate={handleNavigate} />;
-    case 'orders': return <Orders onStatusChange={handleOrderStatusChange} onNavigate={handleNavigate} />;
-    case 'deliveries': return <Deliveries onDeliver={handleDeliver} />;
-    case 'inventory': return <Inventory />;
-    case 'tenants': return <Tenants />;
-    case 'broadcasts': return <Broadcasts />;
-    case 'finanzas': return <Finanzas />;
-    case 'users': return <Users />;
-    case 'cortedecaja': return <CorteDeCaja />;
-    case 'repairs': return <Repairs onNavigate={handleNavigate} />;
-    default: return <Dashboard />;
-  }
-};
+  const renderPage = () => {
+    switch (currentPage) {
+      case 'dashboard': return <Dashboard />;
+      case 'entradas': return <CajaEntradas />;
+      case 'salidas': return <CajaSalidas />;
+      case 'pos':
+      case 'caja':
+        return <POS onSaleComplete={handleSaleComplete} onNavigate={handleNavigate} />;
+      case 'clients': return <Clientes onNavigate={handleNavigate} />;
+      case 'orders': return <Orders onStatusChange={handleOrderStatusChange} onNavigate={handleNavigate} />;
+      case 'deliveries': return <Deliveries onDeliver={handleDeliver} />;
+      case 'inventory': return <Inventory />;
+      case 'tenants': return <Tenants />;
+      case 'broadcasts': return <Broadcasts />;
+      case 'finanzas': return <Finanzas />;
+      case 'users': return <Users />;
+      case 'cortedecaja': return <CorteDeCaja />;
+      case 'repairs': return <Repairs onNavigate={handleNavigate} />;
+      case 'reports': return <SupportTickets />;
+      case 'admin-tickets': return <AdminTickets />;
+      default: return <Dashboard />;
+    }
+  };
 
   return (
     <>
@@ -140,65 +167,85 @@ const renderPage = () => {
         {renderPage()}
       </Layout>
 
+      {/* CAMPANITA COMPACTA ESTILO CANVA */}
       {showNotifications && (
-        <div className="fixed inset-0 z-50 flex justify-end animate-fade-in" onClick={() => setShowNotifications(false)}>
-          <div className="absolute inset-0 bg-black/30" />
-          <div className="relative w-full max-w-sm bg-white h-full shadow-xl overflow-auto animate-slide-right" onClick={(e) => e.stopPropagation()}>
-            <div className="px-5 py-4 border-b border-ink-200 flex items-center justify-between sticky top-0 bg-white z-10">
-              <h2 className="font-bold text-ink-900 flex items-center gap-2">
-                <Bell className="w-5 h-5 text-primary-600" />
-                Notificaciones {unreadCount > 0 && <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{unreadCount}</span>}
-              </h2>
-              <div className="flex items-center gap-2">
-                {unreadCount > 0 && (
-                  <button onClick={markAllRead} className="text-xs text-primary-600 font-semibold hover:underline">
-                    Marcar todo leído
-                  </button>
-                )}
-                <button onClick={() => setShowNotifications(false)} className="text-ink-400 hover:text-ink-600 p-1">
-                  <X className="w-5 h-5" />
+        <div className="fixed inset-0 z-50" onClick={() => setShowNotifications(false)}>
+          <div
+            className="absolute bg-white rounded-2xl shadow-2xl border border-ink-100 overflow-hidden flex flex-col"
+            style={{ top: 68, right: 14, width: 380, maxWidth: 'calc(100vw - 28px)', maxHeight: 'calc(100vh - 90px)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header compacto */}
+            <div className="flex items-center justify-between px-4 pt-3 pb-2.5 border-b border-ink-100">
+              <h2 className="text-lg font-extrabold text-ink-900 leading-none">Notificaciones</h2>
+              {unreadCount > 0 ? (
+                <button onClick={markAllRead} className="text-xs text-blue-600 font-semibold hover:underline shrink-0">
+                  Marcar todas como leídas
                 </button>
-              </div>
-            </div>
-            <div className="divide-y divide-ink-100">
-              {userNotifications.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 text-ink-400">
-                  <Bell className="w-12 h-12 mb-3 text-ink-300" />
-                  <p className="font-medium">Sin notificaciones</p>
-                  <p className="text-xs mt-1">Los anuncios del admin aparecerán aquí</p>
-                </div>
               ) : (
-                userNotifications.map((n) => (
-                  <div key={n.id} className={`px-5 py-4 ${!n.read ? 'bg-blue-50/60' : ''} hover:bg-ink-50 transition-colors`}>
-                    <div className="flex items-start gap-3">
-                      <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                        n.type === 'success' ? 'bg-green-100 text-green-600' :
-                        n.type === 'warning' ? 'bg-amber-100 text-amber-600' :
-                        n.type === 'error' ? 'bg-red-100 text-red-600' :
-                        'bg-blue-100 text-blue-600'
-                      }`}>
-                        {n.type === 'success' ? <Check className="w-4 h-4" /> :
-                         n.type === 'warning' ? <AlertTriangle className="w-4 h-4" /> :
-                         <Info className="w-4 h-4" />}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-ink-800 leading-tight">{n.title}</p>
-                        <p className="text-sm text-ink-600 mt-1 leading-snug">{n.message}</p>
-                        <p className="text-[11px] text-ink-400 mt-2">{new Date(n.created_at).toLocaleString('es-MX')}</p>
-                        {!n.read && (
-                          <button
-                            onClick={() => markNotificationRead(n.id)}
-                            className="text-xs text-primary-600 font-semibold mt-2 hover:underline"
-                          >
-                            Marcar como leída
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))
+                <button onClick={() => setShowNotifications(false)} className="text-ink-400 hover:text-ink-600 p-1">
+                  <X className="w-4 h-4" />
+                </button>
               )}
             </div>
+
+            {/* Lista compacta */}
+            <div className="overflow-y-auto px-3 py-2 space-y-2">
+              {userNotifications.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-ink-400">
+                  <Bell className="w-8 h-8 mb-2 text-ink-300" />
+                  <p className="font-medium text-xs">Sin notificaciones</p>
+                </div>
+              ) : (
+                userNotifications.map((n) => {
+                  const isTicket = n.title.includes('ticket #') || n.title.includes('TK-');
+                  return (
+                    <div
+                      key={n.id}
+                      className="rounded-xl px-3 py-2.5"
+                      style={{ background: !n.read ? '#EFF6FF' : '#fff', border: !n.read ? '1px solid #DBEAFE' : '1px solid #F1F5F9' }}
+                    >
+                      <div className="flex items-start gap-2.5">
+                        <div
+                          className="rounded-full flex items-center justify-center shrink-0"
+                          style={{ width: 36, height: 36, fontSize: 16, background: isTicket ? '#DBEAFE' : '#F1F5F9' }}
+                        >
+                          {isTicket ? '🎫' : '📢'}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-ink-900 leading-snug">{n.title}</p>
+                          <p className="text-xs text-ink-600 mt-0.5 leading-snug line-clamp-2">{n.message}</p>
+                          <div className="flex items-center justify-between mt-2 gap-2">
+                            <p className="text-xs text-ink-400">{timeAgo(n.created_at)}</p>
+                            {isTicket ? (
+                              <button onClick={() => handleNotificationClick(n)} className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-full shrink-0">
+                                Ver ticket
+                              </button>
+                            ) : !n.read ? (
+                              <button onClick={() => markNotificationRead(n.id)} className="text-xs text-blue-600 font-semibold hover:underline shrink-0">
+                                Marcar como leída
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Footer compacto */}
+            {userNotifications.length > 0 && (
+              <div className="px-3 pb-3 pt-1">
+                <button
+                  onClick={() => { setShowNotifications(false); setCurrentPage('reports'); }}
+                  className="w-full bg-ink-100 hover:bg-ink-200 text-blue-600 font-bold text-xs py-2.5 rounded-full"
+                >
+                  Ver todas las notificaciones
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

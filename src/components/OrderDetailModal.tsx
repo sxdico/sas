@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { evidenciaAPI } from '@/api/client'
 import { ORDER_STATUS_CONFIG, formatCurrency, formatDateTime } from '@/utils/permissions';
 import type { RepairOrder, OrderStatus } from '@/types';
-import { getWarrantyInfo, getPagoInfo, getPromisedInfo } from '@/constants/repairOrders';
+import { getWarrantyInfo, getPagoInfo, getPromisedInfo } from '@/constants/RepairOrders';
 import {
   X, Phone, Wrench, Package, FileText, Check, DollarSign, Shield, Lock, Calendar, Trash2, Wallet, ChevronRight, Camera, Upload, KeyRound, Eye, EyeOff, Ban, Hash, Smartphone, Clock, Plus
 } from 'lucide-react';

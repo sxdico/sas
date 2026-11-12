@@ -89,7 +89,14 @@ export const Customer = sequelize.define('Customer', {
   email: { type: DataTypes.STRING(200) },
   credit_balance: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
   total_purchases: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
-}, { tableName: 'customers', createdAt: 'created_at', updatedAt: false });
+  // --- NUEVOS CAMPOS CLIENTES FRECUENTES ---
+  notes: { type: DataTypes.TEXT, allowNull: true },
+  is_frequent: { type: DataTypes.BOOLEAN, defaultValue: false },
+  send_welcome: { type: DataTypes.BOOLEAN, defaultValue: false },
+  visits_count: { type: DataTypes.INTEGER, defaultValue: 0 },
+  total_spent: { type: DataTypes.DECIMAL(10, 2), defaultValue: 0 },
+  last_visit_at: { type: DataTypes.DATE, allowNull: true },
+}, { tableName: 'customers', createdAt: 'created_at', updatedAt: 'updated_at' });
 
 export const InventoryMovement = sequelize.define('InventoryMovement', {
   id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
@@ -248,7 +255,38 @@ export const Broadcast = sequelize.define('Broadcast', {
   created_by_name: { type: DataTypes.STRING(150), allowNull: true },
 }, { tableName: 'broadcasts', createdAt: 'created_at', updatedAt: 'updated_at' });
 
+export const SupportTicket = sequelize.define('SupportTicket', {
+  id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
+  tenant_id: { type: DataTypes.STRING(36), allowNull: true },
+  user_id: { type: DataTypes.UUID, allowNull: true },
+  user_name: { type: DataTypes.STRING(150), allowNull: true },
+  folio: { type: DataTypes.STRING(20), allowNull: false },
+  subject: { type: DataTypes.STRING(255), allowNull: false },
+  type: { type: DataTypes.ENUM('bug', 'duda', 'mejora', 'otro'), defaultValue: 'bug' },
+  priority: { type: DataTypes.ENUM('alta', 'media', 'baja'), defaultValue: 'media' },
+  description: { type: DataTypes.TEXT, allowNull: false },
+  status: { type: DataTypes.ENUM('abierto', 'en_revision', 'en_progreso', 'resuelto', 'cerrado'), defaultValue: 'abierto' },
+  attachment_url: { type: DataTypes.STRING(500), allowNull: true },
+  include_system_info: { type: DataTypes.BOOLEAN, defaultValue: true },
+  system_info: { type: DataTypes.JSON, allowNull: true },
+}, { tableName: 'support_tickets', createdAt: 'created_at', updatedAt: 'updated_at' });
+
+export const SupportTicketComment = sequelize.define('SupportTicketComment', {
+  id: { type: DataTypes.UUID, defaultValue: UUIDV4, primaryKey: true },
+  ticket_id: { type: DataTypes.STRING(36), allowNull: false },
+  user_id: { type: DataTypes.UUID, allowNull: true },
+  user_name: { type: DataTypes.STRING(150), allowNull: true },
+  role: { type: DataTypes.STRING(30), allowNull: true },
+  is_support: { type: DataTypes.BOOLEAN, defaultValue: false },
+  message: { type: DataTypes.TEXT, allowNull: false },
+  attachment_url: { type: DataTypes.STRING(500), allowNull: true },
+}, { tableName: 'support_ticket_comments', createdAt: 'created_at', updatedAt: false });
+
+SupportTicket.hasMany(SupportTicketComment, { foreignKey: 'ticket_id', constraints: false });
+SupportTicketComment.belongsTo(SupportTicket, { foreignKey: 'ticket_id', constraints: false });
 Tenant.hasMany(User, { foreignKey: 'tenant_id' });
+Tenant.hasMany(SupportTicket, { foreignKey: 'tenant_id' });
+SupportTicket.belongsTo(Tenant, { foreignKey: 'tenant_id' });
 User.belongsTo(Tenant, { foreignKey: 'tenant_id' });
 Tenant.hasMany(Category, { foreignKey: 'tenant_id' });
 Category.belongsTo(Tenant, { foreignKey: 'tenant_id' });

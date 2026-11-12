@@ -5,7 +5,7 @@ import {
   Wrench, LayoutDashboard, ShoppingCart, ClipboardList, Package,
   Users, Building2, LogOut, Bell, Menu, TrendingUp, Megaphone,
   ChevronDown, DollarSign, ArrowDownLeft, ArrowUpRight, Scissors,
-  HelpCircle, FileBarChart, FileText
+  HelpCircle, FileBarChart, FileText, Ticket
 } from 'lucide-react';
 
 interface NavItem {
@@ -48,12 +48,13 @@ const ALL_NAV_ITEMS: NavItem[] = [
     ]
   },
   {
-    label: 'Ayuda y Soporte', icon: HelpCircle, page: 'ayuda-group', permission: 'reports',
-    children: [
-      { label: 'Reportes', icon: FileBarChart, page: 'reports', permission: 'reports' },
-      { label: 'Broadcasts', icon: Megaphone, page: 'broadcasts', permission: 'tenants' },
-    ]
-  },
+  label: 'Ayuda y Soporte', icon: HelpCircle, page: 'ayuda-group', permission: 'reports',
+  children: [
+    { label: 'Reportes', icon: FileBarChart, page: 'reports', permission: 'reports' },
+    { label: 'Broadcasts', icon: Megaphone, page: 'broadcasts', permission: 'tenants' },
+    { label: 'Tickets', icon: Ticket, page: 'admin-tickets', permission: 'tenants' },
+  ]
+},
 ];
 
 interface LayoutProps {
@@ -213,7 +214,7 @@ export default function Layout({ currentPage, onNavigate, children, notification
           </div>
         </header>
 
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 overflow-hidden">
           {children}
         </main>
       </div>

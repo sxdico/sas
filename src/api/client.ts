@@ -138,3 +138,31 @@ export const evidenciaAPI = {
   upload: (formData: FormData) => api.post('/evidencias', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
   delete: (id: string) => api.delete(`/evidencias/${id}`),
 };
+
+export const customerAPI = {
+  list: (params?: any) => api.get('/customers', { params }),
+  get: (id: string) => api.get(`/customers/${id}`),
+  create: (data: any) => api.post('/customers', data),
+  update: (id: string, data: any) => api.put(`/customers/${id}`, data),
+  delete: (id: string) => api.delete(`/customers/${id}`),
+};
+
+export const supportAPI = {
+  list: (params?: any) => api.get('/support-tickets', { params }),
+  get: (id: string) => api.get(`/support-tickets/${id}`),
+  create: (data: any) => {
+    if (data instanceof FormData) {
+      return api.post('/support-tickets', data, { headers: { 'Content-Type': 'multipart/form-data' } });
+    }
+    return api.post('/support-tickets', data);
+  },
+  updateStatus: (id: string, status: string) => api.put(`/support-tickets/${id}/status`, { status }),
+  delete: (id: string) => api.delete(`/support-tickets/${id}`),
+  comments: (id: string) => api.get(`/support-tickets/${id}/comments`),
+  addComment: (id: string, data: any) => {
+  if (data instanceof FormData) {
+    return api.post(`/support-tickets/${id}/comments`, data, { headers: { 'Content-Type': 'multipart/form-data' } });
+  }
+  return api.post(`/support-tickets/${id}/comments`, data);
+},
+};

@@ -1,0 +1,17 @@
+ifixsoft.online {
+    reverse_proxy 127.0.0.1:5173
+}
+
+api.ifixsoft.online {
+    reverse_proxy 127.0.0.1:3001
+}
+
+ifixsoft.online {
+    root * C:\Users\sxdico\Desktop\sas\dist
+    file_server
+    try_files {path} /index.html
+}
+
+api.ifixsoft.online {
+    reverse_proxy 127.0.0.1:3001
+}

@@ -148,6 +148,16 @@ export interface Customer {
   email: string;
   credit_balance: number;
   total_purchases: number;
+  notes?: string | null;
+  is_frequent?: boolean;
+  send_welcome?: boolean;
+  visits_count?: number;
+  total_spent?: number;
+  last_visit_at?: string | null;
+  // calculados en frontend
+  visits?: number;
+  last_visit?: string | null;
+  is_new_this_month?: boolean;
 }
 
 export interface InventoryMovement {

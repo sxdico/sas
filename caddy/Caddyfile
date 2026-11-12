@@ -1,7 +1,6 @@
+
 ifixsoft.online {
-    root * C:\Users\sxdico\Desktop\sas\dist
-    file_server
-    try_files {path} /index.html
+    reverse_proxy 127.0.0.1:5173
 }
 
 api.ifixsoft.online {
